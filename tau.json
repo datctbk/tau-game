@@ -1,0 +1,7 @@
+{
+  "name": "tau-game",
+  "version": "0.1.0",
+  "description": "Autonomous game solving harness for ARC-AGI-3 and grid environments inspired by Tufa Labs' Duck Harness.",
+  "author": "datctbk",
+  "extensions": ["extensions"]
+}

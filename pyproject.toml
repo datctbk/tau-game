@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tau-game"
+version = "0.1.0"
+description = "Light Duck Harness for autonomous game exploration and ARC-AGI-3 problem solving"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+tau-game = "main:main"
+
+[tool.setuptools.package-dir]
+"" = "."

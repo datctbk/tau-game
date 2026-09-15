@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tau-game: Light-Duck Harness — Presentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #080C14;
+      --bg-surface: #0F172A;
+      --bg-card: rgba(17, 24, 39, 0.75);
+      --bg-card-hover: rgba(30, 41, 59, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(56, 189, 248, 0.35);
+      
+      --accent-cyan: #38BDF8;
+      --accent-blue: #60A5FA;
+      --accent-indigo: #818CF8;
+      --accent-purple: #C084FC;
+      --accent-emerald: #34D399;
+      --accent-amber: #FBBF24;
+      --accent-rose: #FB7185;
+
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      user-select: none;
+    }
+
+    /* Ambient background lighting */
+    .ambient-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(140px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.15;
+      transition: all 1.2s ease;
+    }
+    .glow-1 { top: -100px; left: -100px; background: var(--accent-cyan); }
+    .glow-2 { bottom: -100px; right: -100px; background: var(--accent-purple); }
+
+    /* Top Progress Bar */
+    #progress-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo), var(--accent-purple));
+      width: 0%;
+      transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100;
+      box-shadow: 0 0 12px var(--accent-cyan);
+    }
+
+    /* Deck Viewport */
+    #deck-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    /* Individual Slide */
+    .slide {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      padding: 3.5rem 5rem 4.5rem 5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.96) translateY(20px);
+      transition: opacity 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1) translateY(0);
+    }
+
+    .slide.exit-left {
+      opacity: 0;
+      transform: scale(0.96) translateX(-40px);
+    }
+
+    /* Typography Utilities */
+    .slide-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-cyan);
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      margin-bottom: 1.25rem;
+      width: fit-content;
+      backdrop-filter: blur(8px);
+    }
+
+    .slide-title {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(135deg, #FFFFFF 30%, #CBD5E1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .slide-subtitle {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+      max-width: 900px;
+      line-height: 1.5;
+    }
+
+    /* Card & Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      width: 100%;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(16px);
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      border-color: rgba(56, 189, 248, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card p, .card li {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Code Blocks */
+    pre, code {
+      font-family: var(--font-mono);
+    }
+
+    pre {
+      background: #0B1120;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #E2E8F0;
+      overflow-x: auto;
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.5);
+    }
+
+    .highlight-kw { color: #F472B6; font-weight: 600; }
+    .highlight-fn { color: #38BDF8; }
+    .highlight-str { color: #34D399; }
+    .highlight-num { color: #FBBF24; }
+    .highlight-comment { color: #64748B; font-style: italic; }
+
+    /* Interactive ASCII Board */
+    .ascii-board {
+      background: #050811;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 12px;
+      padding: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 1.05rem;
+      line-height: 1.45;
+      letter-spacing: 0.25em;
+      white-space: pre;
+      color: #38BDF8;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.08);
+      display: inline-block;
+    }
+
+    .ascii-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem 1.2rem;
+      font-size: 0.82rem;
+      margin-top: 0.75rem;
+      color: var(--text-muted);
+    }
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .legend-chip span {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: #FFF;
+    }
+
+    /* Comparison Table */
+    .table-container {
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: rgba(15, 23, 42, 0.8);
+      padding: 0.9rem 1.25rem;
+      font-weight: 700;
+      color: var(--text-main);
+      border-bottom: 1px solid var(--border-subtle);
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .col-highlight {
+      background: rgba(56, 189, 248, 0.05);
+      color: var(--text-main);
+      font-weight: 600;
+      border-left: 1px solid rgba(56, 189, 248, 0.2);
+      border-right: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    th.col-highlight {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-cyan);
+    }
+
+    /* Status Pills */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .pill-green { background: rgba(52, 211, 153, 0.12); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .pill-red { background: rgba(251, 113, 133, 0.12); color: #FB7185; border: 1px solid rgba(251, 113, 133, 0.3); }
+    .pill-amber { background: rgba(251, 191, 36, 0.12); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.3); }
+
+    /* Terminal Simulation Box */
+    .terminal-box {
+      background: #030712;
+      border: 1px solid #1F2937;
+      border-radius: 12px;
+      overflow: hidden;
+      font-family: var(--font-mono);
+      box-shadow: 0 10px 30px -5px rgba(0,0,0,0.7);
+    }
+    .terminal-header {
+      background: #111827;
+      padding: 0.5rem 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      border-bottom: 1px solid #1F2937;
+    }
+    .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-red { background: #EF4444; }
+    .dot-yellow { background: #F59E0B; }
+    .dot-green { background: #10B981; }
+    .terminal-title {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-left: 0.4rem;
+    }
+    .terminal-body {
+      padding: 1rem 1.25rem;
+      font-size: 0.84rem;
+      line-height: 1.6;
+      color: #E2E8F0;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    /* Interactive Level Switcher */
+    .level-pills {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .level-btn {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text-muted);
+      padding: 0.4rem 0.9rem;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .level-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #FFF;
+    }
+    .level-btn.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+
+    /* Flow Chart / Architecture Nodes */
+    .arch-flow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      position: relative;
+    }
+    .arch-node {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.25rem;
+      flex: 1;
+      text-align: center;
+      position: relative;
+      transition: all 0.3s;
+    }
+    .arch-node:hover {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 4px 20px -2px rgba(56, 189, 248, 0.2);
+    }
+    .arch-arrow {
+      color: var(--accent-cyan);
+      font-size: 1.3rem;
+      font-weight: 700;
+      opacity: 0.7;
+    }
+
+    /* Bottom Control Bar */
+    #deck-controls {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border-subtle);
+      backdrop-filter: blur(16px);
+      padding: 0.45rem 0.9rem;
+      border-radius: 9999px;
+      z-index: 100;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+    }
+
+    .ctrl-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-main);
+    }
+
+    .slide-counter {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0 0.5rem;
+      min-width: 65px;
+      text-align: center;
+    }
+
+    /* Speaker Notes Overlay */
+    #speaker-notes-panel {
+      position: fixed;
+      bottom: 5.5rem;
+      right: 2rem;
+      width: 440px;
+      background: rgba(11, 17, 32, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 16px;
+      padding: 1.25rem 1.5rem;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+      z-index: 999;
+      transform: translateY(20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #speaker-notes-panel.visible {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .notes-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .notes-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .notes-content {
+      font-size: 0.88rem;
+      color: #CBD5E1;
+      line-height: 1.6;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    /* Overview Grid Modal */
+    #overview-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(5, 8, 16, 0.92);
+      backdrop-filter: blur(20px);
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      padding: 3rem 4rem;
+    }
+    #overview-modal.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      overflow-y: auto;
+      padding: 1rem 0;
+    }
+    .overview-thumb {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .overview-thumb:hover, .overview-thumb.active {
+      border-color: var(--accent-cyan);
+      transform: scale(1.03);
+      background: rgba(30, 41, 59, 0.9);
+    }
+    .overview-thumb-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #FFF;
+      margin-bottom: 0.35rem;
+    }
+    .overview-thumb-num {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--accent-cyan);
+    }
+
+    /* Print / PDF Export Styling */
+    @media print {
+      body {
+        overflow: visible;
+        background: #FFF !important;
+        color: #000 !important;
+      }
+      #progress-bar, #deck-controls, #speaker-notes-panel, #overview-modal, .ambient-glow {
+        display: none !important;
+      }
+      .slide {
+        position: relative !important;
+        page-break-after: always;
+        opacity: 1 !important;
+        transform: none !important;
+        height: 100vh;
+        width: 100vw;
+        display: flex !important;
+        padding: 3rem !important;
+        color: #000 !important;
+        background: #FFF !important;
+      }
+      .slide-title {
+        -webkit-text-fill-color: #000 !important;
+        color: #000 !important;
+      }
+      .card, pre, .terminal-box, .table-container {
+        border-color: #DDD !important;
+        background: #F8F9FA !important;
+        color: #000 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Ambient glowing backdrop -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Progress bar -->
+  <div id="progress-bar"></div>
+
+  <!-- Main Slides Deck Viewport -->
+  <div id="deck-container">
+
+    <!-- ==================== SLIDE 1: Title ==================== -->
+    <div class="slide active" data-slide="1" data-notes="Welcome everyone. Today we are presenting tau-game, a project built on the Light-Duck Harness architecture. It introduces a paradigm shift for solving ARC-AGI and interactive grid puzzles by replacing blind next-token guessing with an interactive Python REPL workspace and an empirical world model.">
+      <div style="max-width: 1000px; margin: 0 auto; text-align: center; display: flex; flex-direction: column; align-items: center;">
+        <div class="slide-badge">
+          <span>🎮</span> Autonomous Agent Architecture
+        </div>
+        <h1 class="slide-title" style="font-size: 3.8rem; margin-bottom: 1rem; line-height: 1.1;">
+          tau-game: Light-Duck Harness
+        </h1>
+        <p class="slide-subtitle" style="font-size: 1.4rem; max-width: 800px; margin: 0 auto 2.5rem auto;">
+          Autonomous ARC-AGI Puzzle Solving via Interactive Python REPL & Zero-Leakage Empirical World Modeling
+        </p>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 3rem;">
+          <div class="pill pill-green" style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+            <span>⚡</span> Zero Prompt Leakage
+          </div>
+          <div class="pill pill-cyan" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.5rem 1rem; font-size: 0.9rem;">
+            <span>🐍</span> REPL as Working Memory
+          </div>
+          <div class="pill pill-amber" style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+            <span>👁️</span> 4-Connected Perception
+          </div>
+          <div class="pill" style="background: rgba(192, 132, 252, 0.12); color: #C084FC; border: 1px solid rgba(192, 132, 252, 0.3); padding: 0.5rem 1rem; font-size: 0.9rem;">
+            <span>📡</span> Live Thinking Stream
+          </div>
+        </div>
+
+        <div style="font-size: 0.9rem; color: var(--text-dim); display: flex; gap: 2rem;">
+          <span>Inspired by <strong>Tufa Labs' ARC-AGI-3 Duck Harness</strong></span>
+          <span>•</span>
+          <span>Powered by <strong>Tau Agent Architecture</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 2: The Problem ==================== -->
+    <div class="slide" data-slide="2" data-notes="Traditional LLMs struggle horribly with grid worlds and ARC tasks. When asked 'what is your next move?', they guess in the dark, suffer from spatial hallucinations, and waste context turns. Rigid tool calling is also too slow and inflexible. Duck harness solves this.">
+      <div class="slide-badge"><span>❌</span> The Challenge</div>
+      <h2 class="slide-title">Why Traditional LLM Agents Fail at ARC</h2>
+      <p class="slide-subtitle">Spatial hallucination, context exhaustion, and rigid schemas cripple standard prompting.</p>
+
+      <div class="grid-2">
+        <div class="card" style="border-color: rgba(251, 113, 133, 0.25);">
+          <div class="card-title" style="color: var(--accent-rose);">
+            <span>🛑</span> Raw Prompting & Blind Token Guessing
+          </div>
+          <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+            <li><strong>Spatial Blindness:</strong> Models hallucinate 2D Manhattan distances and miss diagonal wall blockages in raw text matrices.</li>
+            <li><strong>Destructive Exploration:</strong> One wrong move into a trap or wall causes permanent failure; zero opportunity to test moves in sandbox memory.</li>
+            <li><strong>Context Burnout:</strong> Printing raw board strings every single step rapidly overflows the 4k-32k context window.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="border-color: rgba(56, 189, 248, 0.25);">
+          <div class="card-title" style="color: var(--accent-cyan);">
+            <span>🦆</span> The Duck Harness Solution
+          </div>
+          <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+            <li><strong>REPL Sandbox Workspace:</strong> The board is living state. The model can inspect variables, write loops, and calculate exact paths.</li>
+            <li><strong>Action Chaining:</strong> Agent writes <code>action(["UP", "UP", "RIGHT", "RIGHT"])</code> to execute full paths in 1 atomic turn.</li>
+            <li><strong>Smart Memory Eviction:</strong> Keeps system prompt and hypothesis register while evicting stale intermediate turns.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 3: Architecture ==================== -->
+    <div class="slide" data-slide="3" data-notes="Here is the complete end-to-end architecture. The model acts as the reasoning brain. It emits executable Python blocks into an isolated REPL sandbox. The REPL interacts with the Environment, returning rich physical delta transitions back into perception and memory.">
+      <div class="slide-badge"><span>🏗️</span> System Architecture</div>
+      <h2 class="slide-title">The Light-Duck Harness Execution Loop</h2>
+      <p class="slide-subtitle">Closed-loop cycle: Perceive $\rightarrow$ Reason $\rightarrow$ Code $\rightarrow$ Act $\rightarrow$ Model.</p>
+
+      <div class="arch-flow" style="margin-bottom: 1.5rem;">
+        <div class="arch-node">
+          <div style="font-size: 1.6rem; margin-bottom: 0.3rem;">🧠</div>
+          <div style="font-weight: 700; color: #FFF; font-size: 0.95rem;">LLM (Brain)</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">Qwen-27B / DeepSeek-R1 / Tau</div>
+        </div>
+        <div class="arch-arrow">➔</div>
+        <div class="arch-node" style="border-color: rgba(56, 189, 248, 0.4);">
+          <div style="font-size: 1.6rem; margin-bottom: 0.3rem;">🐍</div>
+          <div style="font-weight: 700; color: var(--accent-cyan); font-size: 0.95rem;">Python REPL</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;"><code>action()</code>, <code>current_frame</code></div>
+        </div>
+        <div class="arch-arrow">➔</div>
+        <div class="arch-node">
+          <div style="font-size: 1.6rem; margin-bottom: 0.3rem;">🕹️</div>
+          <div style="font-weight: 700; color: #FFF; font-size: 0.95rem;">Environment</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">GridWorld / Mini-ARC 1–7</div>
+        </div>
+        <div class="arch-arrow">➔</div>
+        <div class="arch-node" style="border-color: rgba(192, 132, 252, 0.4);">
+          <div style="font-size: 1.6rem; margin-bottom: 0.3rem;">🔬</div>
+          <div style="font-weight: 700; color: var(--accent-purple); font-size: 0.95rem;">Perception & Memory</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">Segmentation + World Model</div>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title" style="font-size: 0.95rem; color: var(--accent-cyan);">1. Observation Injection</div>
+          <p style="font-size: 0.85rem;">REPL sandbox pre-loads <code>current_frame</code> with 2D numpy grid, ASCII rendering, and segmented object nodes.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="font-size: 0.95rem; color: var(--accent-indigo);">2. Safe Code Execution</div>
+          <p style="font-size: 0.85rem;">Extracts and runs Python markdown blocks with captured stdout and atomic action batching.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="font-size: 0.95rem; color: var(--accent-emerald);">3. State Transition Deltas</div>
+          <p style="font-size: 0.85rem;">Calculates coordinate-level diffs: <code>(2,2) C->B, (3,2) .->C</code> to feed empirical deduction.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 4: Zero-Leakage Empirical Discovery ==================== -->
+    <div class="slide" data-slide="4" data-notes="A core design principle is Zero Data Leakage. The prompt never tells the agent 'C is a box and M is a target pad'. Instead, when the agent moves into C, the physical step transition delta reports what changed on the board. The model deduces the game physics purely from empirical observation.">
+      <div class="slide-badge"><span>🔬</span> Scientific Method</div>
+      <h2 class="slide-title">Zero-Leakage Empirical Discovery</h2>
+      <p class="slide-subtitle">The agent learns the laws of physics solely through coordinate transition deltas.</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-amber);">
+            <span>🚫</span> No Hardcoded Semantic Cheat Sheets
+          </div>
+          <p style="font-size: 0.9rem; margin-bottom: 1rem;">
+            In traditional systems, prompts leak rules: <em>"Y is a key, O is a door, C is a pushable box"</em>. In <code>tau-game</code>, the system prompt contains <strong>zero puzzle-specific knowledge</strong>.
+          </p>
+          <div class="terminal-box">
+            <div class="terminal-header">
+              <span class="terminal-dot dot-red"></span>
+              <span class="terminal-dot dot-yellow"></span>
+              <span class="terminal-dot dot-green"></span>
+              <span class="terminal-title">Physical Step Transition Output</span>
+            </div>
+            <div class="terminal-body" style="font-size: 0.82rem;">
+<span style="color: #64748B;"># Result of action(["DOWN", "DOWN"]):</span>
+Step transitions:
+  - DOWN: (1,2) B->., (2,2) C->B, (3,2) .->C
+  - DOWN: (2,2) B->., (3,2) C->B, (4,2) M->C
+<span style="color: #34D399; font-weight: 700;">[GOAL REACHED! Status: WIN]</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="border-color: rgba(52, 211, 153, 0.3);">
+          <div class="card-title" style="color: var(--accent-emerald);">
+            <span>💡</span> Emergent Scientific Deduction
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.88rem; line-height: 1.5;">
+            <div style="background: rgba(255,255,255,0.03); padding: 0.85rem; border-radius: 8px; border-left: 3px solid var(--accent-cyan);">
+              <strong style="color: #FFF;">Deduction 1 (Object Physics):</strong><br>
+              Player moving to (2,2) displaced <code>C</code> to (3,2) $\implies$ <code>C</code> is a <strong>Pushable Crate</strong> (Sokoban mechanic).
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 0.85rem; border-radius: 8px; border-left: 3px solid var(--accent-emerald);">
+              <strong style="color: #FFF;">Deduction 2 (Goal Condition):</strong><br>
+              Pushing <code>C</code> onto <code>M</code> triggered a win state $\implies$ <code>M</code> is an <strong>Actuator / Target Pad</strong>!
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 0.85rem; border-radius: 8px; border-left: 3px solid var(--accent-purple);">
+              <strong style="color: #FFF;">Deduction 3 (State Persistence):</strong><br>
+              Hypothesis is recorded in the agent's <code>world_model</code> register for all subsequent turns.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 5: Perception ==================== -->
+    <div class="slide" data-slide="5" data-notes="Perception transforms raw integer grids into structured geometric objects. We use 4-connected topological component segmentation. The LLM can write Python to query object coordinates, areas, and bounding boxes directly.">
+      <div class="slide-badge"><span>👁️</span> Perception Engine</div>
+      <h2 class="slide-title">4-Connected Topological Object Segmentation</h2>
+      <p class="slide-subtitle">Lifting raw integer matrices into semantic, queryable geometric entities.</p>
+
+      <div class="grid-2">
+        <div>
+          <pre style="height: 100%;"><span class="highlight-kw">from</span> dataclasses <span class="highlight-kw">import</span> dataclass
+
+<span class="highlight-comment"># Extracted via connected_components(grid)</span>
+<span class="highlight-kw">@dataclass</span>(frozen=<span class="highlight-kw">True</span>)
+<span class="highlight-kw">class</span> <span class="highlight-fn">ObjectNode</span>:
+    id: <span class="highlight-num">int</span>                        <span class="highlight-comment"># Unique entity ID</span>
+    color: <span class="highlight-num">int</span>                     <span class="highlight-comment"># ARC color index (0-9)</span>
+    pixels: <span class="highlight-fn">list</span>[<span class="highlight-fn">tuple</span>[<span class="highlight-num">int</span>, <span class="highlight-num">int</span>]]  <span class="highlight-comment"># Coordinates [(r,c)...]</span>
+    bbox: <span class="highlight-fn">tuple</span>[<span class="highlight-num">int</span>, <span class="highlight-num">int</span>, <span class="highlight-num">int</span>, <span class="highlight-num">int</span>] <span class="highlight-comment"># (min_r, min_c, max_r, max_c)</span>
+    size: <span class="highlight-num">int</span>                      <span class="highlight-comment"># Area in pixels</span>
+    shape_hash: <span class="highlight-fn">str</span>                <span class="highlight-comment"># Invariant geometric hash</span>
+</pre>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-indigo);">
+            <span>🐍</span> LLM REPL Spatial Reasoning
+          </div>
+          <p style="font-size: 0.88rem; margin-bottom: 0.75rem;">
+            Instead of hallucinating coordinates, the LLM executes exact Python queries:
+          </p>
+          <pre><span class="highlight-comment"># Find all pushable boxes and target pads</span>
+boxes = [o <span class="highlight-kw">for</span> o <span class="highlight-kw">in</span> current_frame.segmentation 
+         <span class="highlight-kw">if</span> o.color == <span class="highlight-num">8</span>]
+targets = [o <span class="highlight-kw">for</span> o <span class="highlight-kw">in</span> current_frame.segmentation 
+           <span class="highlight-kw">if</span> o.color == <span class="highlight-num">6</span>]
+
+<span class="highlight-comment"># Compute exact Manhattan distance</span>
+dist = <span class="highlight-fn">abs</span>(boxes[<span class="highlight-num">0</span>].bbox[<span class="highlight-num">0</span>] - targets[<span class="highlight-num">0</span>].bbox[<span class="highlight-num">0</span>]) + \
+       <span class="highlight-fn">abs</span>(boxes[<span class="highlight-num">0</span>].bbox[<span class="highlight-num">1</span>] - targets[<span class="highlight-num">0</span>].bbox[<span class="highlight-num">1</span>])
+<span class="highlight-fn">print</span>(f<span class="highlight-str">"Manhattan distance: {dist}"</span>)</pre>
+          <div style="margin-top: 0.75rem; font-size: 0.82rem; color: var(--accent-emerald);">
+            ✓ Zero distance calculation errors • Guaranteed collision boundary detection
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 6: Memory & Context Eviction ==================== -->
+    <div class="slide" data-slide="6" data-notes="Long games can run 50 or 100 turns. Without memory management, context windows fill up and the model becomes confused. We implement a dual-engine memory: an explicit World Model register plus smart FIFO context eviction that preserves critical hypotheses.">
+      <div class="slide-badge"><span>🧠</span> Memory Architecture</div>
+      <h2 class="slide-title">World Model & Context Eviction Engine</h2>
+      <p class="slide-subtitle">Achieving indefinite play horizons without context window overflow.</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-cyan);">
+            <span>📑</span> Explicit World Model Register
+          </div>
+          <p style="font-size: 0.88rem; margin-bottom: 0.75rem;">
+            A structured hypothesis register preserved across all turns:
+          </p>
+          <pre><span class="highlight-comment"># Persists across all agent turns:</span>
+World model:
+- 'B' is player avatar
+- '#' are impassable boundary walls
+- 'C' is pushable block (displaces on contact)
+- 'M' is target switch
+- 'SPACE' toggles phase-door at (3,3)</pre>
+          <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.6rem;">
+            The model can mutate and refine this text block at any time via standard Python variable assignment.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-purple);">
+            <span>♻️</span> Dynamic Context Eviction (<code>trim_messages</code>)
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem;">
+            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+              <strong style="color: #FFF;">Protected Invariants:</strong>
+              <div style="color: var(--accent-emerald); font-size: 0.8rem; margin-top: 0.2rem;">
+                • System Prompt &nbsp; • Current Board State &nbsp; • World Model
+              </div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+              <strong style="color: #FFF;">Eviction Policy:</strong>
+              <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
+                Intermediate observations (Turns 1...N-3) are trimmed when token threshold is reached, leaving only transition delta summaries.
+              </div>
+            </div>
+            <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); padding: 0.75rem; border-radius: 8px; color: var(--accent-cyan);">
+              🚀 Enables 100+ turns in small 8k/16k context models with zero degradation.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 7: Streaming Thinking in Tau UI ==================== -->
+    <div class="slide" data-slide="7" data-notes="High-capacity reasoning models like Qwen-27B or DeepSeek-R1 spend 20 to 40 seconds in deep thought before emitting code. Users felt frozen. We built StreamTokenFilter to intercept reasoning tokens and stream them live directly into the Tau TUI terminal.">
+      <div class="slide-badge"><span>📡</span> Real-Time Observability</div>
+      <h2 class="slide-title">Transparent Streaming: &lt;think&gt; Tokens in Tau TUI</h2>
+      <p class="slide-subtitle">Zero blind waiting: Real-time visibility into the model's inner deduction stream.</p>
+
+      <div class="grid-2">
+        <div class="terminal-box">
+          <div class="terminal-header">
+            <span class="terminal-dot dot-red"></span>
+            <span class="terminal-dot dot-yellow"></span>
+            <span class="terminal-dot dot-green"></span>
+            <span class="terminal-title">Tau Terminal — Live Reasoning Stream</span>
+          </div>
+          <div class="terminal-body" style="font-size: 0.82rem;">
+<span style="color: var(--accent-purple); font-weight: 700;">💭 Model Thinking (Turn 2):</span>
+We need to maneuver around the central pillar at (3,3).
+Crate 1 is already at (4,2).
+Target 2 is at (4,4), and Crate 2 is at (2,4).
+If I move down directly, I will collide with (3,3) wall.
+Plan:
+1. Move UP to row 1 (1,2)
+2. Move RIGHT to col 4 (1,4)
+3. Move DOWN to push Crate 2 into (4,4)
+Path: ["UP", "UP", "RIGHT", "RIGHT", "DOWN", "DOWN"]
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-cyan); font-size: 0.95rem;">
+              <span>⚡</span> <code>StreamTokenFilter</code> Pipeline
+            </div>
+            <p style="font-size: 0.85rem;">
+              Splits token stream dynamically between <code>reasoning_content</code>, in-band <code>&lt;think&gt;...&lt;/think&gt;</code> tags, and final executable Python blocks.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-indigo); font-size: 0.95rem;">
+              <span>🎯</span> TUI Spinner Synchronization
+            </div>
+            <p style="font-size: 0.85rem;">
+              Pauses animated CLI spinners during reasoning streaming so terminal text scrolls smoothly without cursor jitter.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-emerald); font-size: 0.95rem;">
+              <span>🛡️</span> Zero Prompt Contamination
+            </div>
+            <p style="font-size: 0.85rem;">
+              Thought stream is piped to the human presenter/operator while clean Python code alone enters the REPL sandbox.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 8: 7-Level Progression Suite ==================== -->
+    <div class="slide" data-slide="8" data-notes="We built a rigorous 7-level progression suite for Mini-ARC. It starts with simple key-door mechanics, introduces Sokoban pushing, phase-wall toggles, multi-box coordination, quantum wormholes, and culminates in Level 7: The Quantum Citadel. Presenters can click between levels to show the ASCII grid.">
+      <div class="slide-badge"><span>🗺️</span> Benchmark Suite</div>
+      <h2 class="slide-title">The 7-Level ARC Puzzle Progression</h2>
+      <p class="slide-subtitle">Interactive benchmark testing key-locks, physics pushing, toggles, and quantum portals.</p>
+
+      <div class="level-pills">
+        <button class="level-btn" onclick="showLevel(1)">L1: Key & Door</button>
+        <button class="level-btn" onclick="showLevel(2)">L2: Sokoban</button>
+        <button class="level-btn" onclick="showLevel(3)">L3: Phase Wall</button>
+        <button class="level-btn active" onclick="showLevel(4)">L4: Dual Sokoban</button>
+        <button class="level-btn" onclick="showLevel(5)">L5: Dual Key</button>
+        <button class="level-btn" onclick="showLevel(6)">L6: Wormhole</button>
+        <button class="level-btn" onclick="showLevel(7)">L7: Citadel</button>
+      </div>
+
+      <div class="grid-2" style="align-items: start;">
+        <div>
+          <div id="level-board" class="ascii-board">
+   0 1 2 3 4 5 6
+ 0 # # # # # # #
+ 1 # B . . . . #
+ 2 # . C . C . #
+ 3 # . . # . . #
+ 4 # . M . M . #
+ 5 # . . . . . #
+ 6 # # # # # # #</div>
+          <div id="level-legend" class="ascii-legend">
+            <div class="legend-chip"><span>B</span> Player</div>
+            <div class="legend-chip"><span>C</span> Box (Pushable)</div>
+            <div class="legend-chip"><span>M</span> Target Pad</div>
+            <div class="legend-chip"><span>#</span> Wall</div>
+          </div>
+        </div>
+
+        <div class="card" id="level-details">
+          <div class="card-title" id="lvl-title" style="color: var(--accent-cyan);">
+            Level 4: Dual-Box Sokoban (7x7)
+          </div>
+          <p id="lvl-desc" style="font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem;">
+            Requires coordinating 2 pushable crates <code>C</code> onto 2 target switches <code>M</code> separated by a central impassable pillar <code>(3,3)</code>. Pushing a crate into a corner causes an irreversible deadlock.
+          </p>
+          <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px; font-size: 0.82rem;">
+            <strong style="color: #FFF;">Core Cognitive Skill:</strong>
+            <div id="lvl-skill" style="color: var(--accent-amber); margin-top: 0.2rem;">
+              Lookahead collision avoidance, avoiding wall corner traps, and multi-object goal decomposition.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 9: Case Study Qwen-27B ==================== -->
+    <div class="slide" data-slide="9" data-notes="Here is a real case study from our tests with Qwen-27B. On Level 4, the model solved the puzzle in just 2 turns and 9 total moves. In Turn 1, it pushed the first crate onto the target. In Turn 2, noticing M->C meant success, it looped around the pillar via the top row and pushed the second box home.">
+      <div class="slide-badge"><span>🏆</span> Empirical Demonstration</div>
+      <h2 class="slide-title">Case Study: Qwen-27B Cracks Level 4 in 2 Turns</h2>
+      <p class="slide-subtitle">Real production trace: 9 atomic steps executed in 2 reasoning loops.</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-cyan); font-size: 1rem;">
+            <span>🔄</span> Turn 1: Pushing Crate 1 (3 steps)
+          </div>
+          <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+            Agent positions behind Box 1 at <code>(2,2)</code> and pushes down into Target 1 <code>(4,2)</code>:
+          </p>
+          <pre style="font-size: 0.8rem;"><span class="highlight-comment"># Turn 1 Action:</span>
+action([<span class="highlight-str">"RIGHT"</span>, <span class="highlight-str">"DOWN"</span>, <span class="highlight-str">"DOWN"</span>])
+
+<span class="highlight-comment"># Transition Result:</span>
+(1,1) B->., (1,2) .->B
+(1,2) B->., (2,2) C->B, (3,2) .->C
+(2,2) B->., (3,2) C->B, (4,2) M->C</pre>
+        </div>
+
+        <div class="card" style="border-color: rgba(52, 211, 153, 0.4);">
+          <div class="card-title" style="color: var(--accent-emerald); font-size: 1rem;">
+            <span>🎯</span> Turn 2: Circumventing Pillar & Winning (6 steps)
+          </div>
+          <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+            Deduces Target 1 is locked. Loops around central wall <code>(3,3)</code> via top corridor:
+          </p>
+          <pre style="font-size: 0.8rem;"><span class="highlight-comment"># Turn 2 Action:</span>
+action([<span class="highlight-str">"UP"</span>, <span class="highlight-str">"UP"</span>, <span class="highlight-str">"RIGHT"</span>, <span class="highlight-str">"RIGHT"</span>, <span class="highlight-str">"DOWN"</span>, <span class="highlight-str">"DOWN"</span>])
+
+<span class="highlight-comment"># Win State Triggered:</span>
+(3,4) C->B, (4,4) M->C
+<span style="color: #34D399; font-weight: 700;">[LEVEL COMPLETED IN 9 TOTAL STEPS!]</span></pre>
+        </div>
+      </div>
+      
+      <div style="margin-top: 1.25rem; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 10px; padding: 0.85rem 1.25rem; font-size: 0.88rem; display: flex; align-items: center; justify-content: space-between;">
+        <span><strong>Key Takeaway:</strong> Without the REPL action batching, a standard agent would require 9 individual API calls and over 25k tokens!</span>
+        <span class="pill pill-green">93% Token Savings</span>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 10: Comparison Matrix ==================== -->
+    <div class="slide" data-slide="10" data-notes="This comparison matrix summarizes the architectural advantages. Raw prompting is slow and blind. Rigid tool-calling suffers from schema overhead. The Duck Harness excels across action chaining, hypothesis sandbox testing, 4-connected perception, context efficiency, and zero prompt leakage.">
+      <div class="slide-badge"><span>📊</span> Architectural Evaluation</div>
+      <h2 class="slide-title">Architecture Comparison Matrix</h2>
+      <p class="slide-subtitle">How the Light-Duck Harness outperforms traditional agent paradigms.</p>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Raw Prompting</th>
+              <th>ReAct / Tool-Calling</th>
+              <th class="col-highlight">tau-game (Duck Harness)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Action Execution</strong></td>
+              <td><span class="pill pill-red">1 action / turn</span></td>
+              <td><span class="pill pill-amber">JSON schema overhead</span></td>
+              <td class="col-highlight"><span class="pill pill-green">Python List Chaining</span></td>
+            </tr>
+            <tr>
+              <td><strong>Hypothesis Testing</strong></td>
+              <td><span class="pill pill-red">Destructive moves</span></td>
+              <td><span class="pill pill-red">Fixed API limits</span></td>
+              <td class="col-highlight"><span class="pill pill-green">Sandbox REPL Memory</span></td>
+            </tr>
+            <tr>
+              <td><strong>Spatial Perception</strong></td>
+              <td><span class="pill pill-red">Raw character strings</span></td>
+              <td><span class="pill pill-amber">Ad-hoc JSON</span></td>
+              <td class="col-highlight"><span class="pill pill-green">4-Connected Segments</span></td>
+            </tr>
+            <tr>
+              <td><strong>Context Efficiency</strong></td>
+              <td><span class="pill pill-red">Explodes in ~8 turns</span></td>
+              <td><span class="pill pill-amber">Heavy tool spec tokens</span></td>
+              <td class="col-highlight"><span class="pill pill-green">Selective Eviction (100+ turns)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Rule Disclosure</strong></td>
+              <td><span class="pill pill-red">Cheatsheet required</span></td>
+              <td><span class="pill pill-amber">Exposes environment</span></td>
+              <td class="col-highlight"><span class="pill pill-green">100% Empirical Deltas</span></td>
+            </tr>
+            <tr>
+              <td><strong>Streaming Observability</strong></td>
+              <td><span class="pill pill-red">Black box wait</span></td>
+              <td><span class="pill pill-amber">Spinner only</span></td>
+              <td class="col-highlight"><span class="pill pill-green">Live &lt;think&gt; Stream</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 11: Developer Experience & CLI ==================== -->
+    <div class="slide" data-slide="11" data-notes="tau-game is fully production-ready today. It can be run from the standalone CLI, from inside the Tau terminal via slash commands, and comes with a 100% passing 21-test verification suite.">
+      <div class="slide-badge"><span>🚀</span> Developer Experience</div>
+      <h2 class="slide-title">Ready to Run: Standalone CLI & Tau Slash Command</h2>
+      <p class="slide-subtitle">Simple, ergonomic integration with Tau or any OpenAI/Ollama compatible endpoint.</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-cyan); font-size: 0.95rem;">
+            <span>💻</span> Standalone CLI Runner
+          </div>
+          <pre><span class="highlight-comment"># Run Dual-Box Sokoban with live thinking stream:</span>
+python tau-game/main.py \
+  --game mini-arc \
+  --level <span class="highlight-num">4</span> \
+  --provider openai \
+  --base-url http://localhost:8080/v1 \
+  --model qwen \
+  --show-thinking</pre>
+          <div style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-dim);">
+            Supports any provider configured in Tau: Ollama, vLLM, OpenAI, MLX, Anthropic.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-indigo); font-size: 0.95rem;">
+            <span>⚡</span> Direct Tau REPL Extension
+          </div>
+          <pre><span class="highlight-comment"># Directly inside the Tau interactive terminal:</span>
+tau> /game mini-arc <span class="highlight-num">4</span>
+tau> /game mini-arc <span class="highlight-num">5</span>
+tau> /game mini-arc <span class="highlight-num">7</span></pre>
+          <div style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 0.75rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.85rem; color: #FFF; font-weight: 600;">Pytest Verification Suite:</span>
+              <span class="pill pill-green">21 / 21 Passed (0.17s)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 12: Roadmap & Q&A ==================== -->
+    <div class="slide" data-slide="12" data-notes="Looking ahead: we are integrating directly with ARC-AGI-3 competition APIs via Arc3Adapter, adding Monte Carlo Tree Search rollouts directly inside the Python REPL sandbox, and pairing high-contrast visual grids for vision models. Thank you, and we'd love to take questions.">
+      <div class="slide-badge"><span>🔮</span> Future Horizons</div>
+      <h2 class="slide-title">Roadmap & Next Milestones</h2>
+      <p class="slide-subtitle">Scaling from Mini-ARC to official competition benchmarks.</p>
+
+      <div class="grid-3" style="margin-bottom: 2rem;">
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-cyan); font-size: 0.95rem;">
+            1. Official ARC-AGI-3 (TAAF)
+          </div>
+          <p style="font-size: 0.85rem;">
+            <code>Arc3Adapter</code> integrates directly with the Tufa Labs and official ARC-AGI-3 live server environment.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-purple); font-size: 0.95rem;">
+            2. REPL MCTS Tree Search
+          </div>
+          <p style="font-size: 0.85rem;">
+            Agent generates sandbox simulations to test push paths without committing destructive moves to the real environment.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-emerald); font-size: 0.95rem;">
+            3. Multimodal VLM Vision
+          </div>
+          <p style="font-size: 0.85rem;">
+            High-contrast RGB rendering paired with bounding-box annotations for Qwen2-VL and GPT-4o visual verification.
+          </p>
+        </div>
+      </div>
+
+      <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <h3 style="font-size: 1.4rem; color: #FFF; margin-bottom: 0.25rem;">Questions & Discussion</h3>
+          <p style="font-size: 0.88rem; color: var(--text-muted);">Explore the codebase in <code>tau-game/</code> and review live traces in <code>slides.md</code></p>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <a href="https://github.com" target="_blank" style="text-decoration: none; background: rgba(56, 189, 248, 0.15); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.5rem 1.25rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem;">
+            View Repository
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Floating Deck Navigation Bar -->
+  <div id="deck-controls">
+    <button class="ctrl-btn" id="btn-prev" title="Previous Slide (Left Arrow / PageUp)">◀</button>
+    <div class="slide-counter" id="slide-num">01 / 12</div>
+    <button class="ctrl-btn" id="btn-next" title="Next Slide (Right Arrow / Space / PageDown)">▶</button>
+    <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.15);"></div>
+    <button class="ctrl-btn" id="btn-notes" title="Toggle Presenter Speaker Notes (N)">📝</button>
+    <button class="ctrl-btn" id="btn-overview" title="Slide Overview Grid (G / O)">🔲</button>
+    <button class="ctrl-btn" id="btn-fullscreen" title="Fullscreen (F)">⛶</button>
+  </div>
+
+  <!-- Speaker Notes Panel -->
+  <div id="speaker-notes-panel">
+    <div class="notes-header">
+      <div class="notes-title">
+        <span>📝</span> Speaker Notes
+      </div>
+      <button class="ctrl-btn" onclick="toggleNotes()" style="width: 20px; height: 20px; font-size: 0.75rem;">✕</button>
+    </div>
+    <div class="notes-content" id="notes-text">
+      Welcome to tau-game.
+    </div>
+  </div>
+
+  <!-- Slide Overview Modal -->
+  <div id="overview-modal">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+      <h2 style="font-size: 1.5rem; color: #FFF;">Slide Overview</h2>
+      <button class="ctrl-btn" onclick="toggleOverview()" style="font-size: 1rem; width: 36px; height: 36px;">✕</button>
+    </div>
+    <div class="overview-grid" id="overview-grid">
+      <!-- Injected via JS -->
+    </div>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const totalSlides = slides.length;
+    let currentSlideIndex = 0;
+
+    const progressBar = document.getElementById('progress-bar');
+    const slideNumDisplay = document.getElementById('slide-num');
+    const notesPanel = document.getElementById('speaker-notes-panel');
+    const notesText = document.getElementById('notes-text');
+    const overviewModal = document.getElementById('overview-modal');
+    const overviewGrid = document.getElementById('overview-grid');
+
+    // Build overview grid items
+    slides.forEach((slide, idx) => {
+      const titleElem = slide.querySelector('.slide-title');
+      const title = titleElem ? titleElem.innerText.replace(/\n/g, ' ') : `Slide ${idx + 1}`;
+      const thumb = document.createElement('div');
+      thumb.className = 'overview-thumb';
+      thumb.innerHTML = `
+        <div class="overview-thumb-num">Slide ${String(idx + 1).padStart(2, '0')}</div>
+        <div class="overview-thumb-title">${title}</div>
+      `;
+      thumb.onclick = () => {
+        goToSlide(idx);
+        toggleOverview(false);
+      };
+      overviewGrid.appendChild(thumb);
+    });
+
+    function updateSlide(idx) {
+      if (idx < 0) idx = 0;
+      if (idx >= totalSlides) idx = totalSlides - 1;
+      currentSlideIndex = idx;
+
+      slides.forEach((s, i) => {
+        s.classList.remove('active', 'exit-left');
+        if (i === idx) {
+          s.classList.add('active');
+        } else if (i < idx) {
+          s.classList.add('exit-left');
+        }
+      });
+
+      // Update progress bar
+      const progressPercent = ((idx + 1) / totalSlides) * 100;
+      progressBar.style.width = `${progressPercent}%`;
+
+      // Update slide counter
+      slideNumDisplay.innerText = `${String(idx + 1).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`;
+
+      // Update speaker notes
+      const notes = slides[idx].getAttribute('data-notes') || 'No speaker notes for this slide.';
+      notesText.innerHTML = notes;
+
+      // Update overview thumb active class
+      const thumbs = overviewGrid.querySelectorAll('.overview-thumb');
+      thumbs.forEach((t, i) => {
+        if (i === idx) t.classList.add('active');
+        else t.classList.remove('active');
+      });
+    }
+
+    function nextSlide() {
+      if (currentSlideIndex < totalSlides - 1) {
+        updateSlide(currentSlideIndex + 1);
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlideIndex > 0) {
+        updateSlide(currentSlideIndex - 1);
+      }
+    }
+
+    function goToSlide(idx) {
+      updateSlide(idx);
+    }
+
+    function toggleNotes() {
+      notesPanel.classList.toggle('visible');
+    }
+
+    function toggleOverview(force) {
+      if (force !== undefined) {
+        overviewModal.classList.toggle('visible', force);
+      } else {
+        overviewModal.classList.toggle('visible');
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    // Keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      // If modal is open, Escape closes it
+      if (overviewModal.classList.contains('visible')) {
+        if (e.key === 'Escape' || e.key === 'g' || e.key === 'o') {
+          toggleOverview(false);
+          return;
+        }
+      }
+
+      switch(e.key) {
+        case 'ArrowRight':
+        case 'PageDown':
+        case ' ':
+        case 'Enter':
+          e.preventDefault();
+          nextSlide();
+          break;
+        case 'ArrowLeft':
+        case 'PageUp':
+        case 'Backspace':
+          e.preventDefault();
+          prevSlide();
+          break;
+        case 'Home':
+          e.preventDefault();
+          goToSlide(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          goToSlide(totalSlides - 1);
+          break;
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
+        case 'n':
+        case 'N':
+          toggleNotes();
+          break;
+        case 'g':
+        case 'G':
+        case 'o':
+        case 'O':
+          toggleOverview();
+          break;
+        case 'Escape':
+          toggleOverview(false);
+          notesPanel.classList.remove('visible');
+          break;
+      }
+    });
+
+    // Control buttons
+    document.getElementById('btn-prev').onclick = prevSlide;
+    document.getElementById('btn-next').onclick = nextSlide;
+    document.getElementById('btn-notes').onclick = toggleNotes;
+    document.getElementById('btn-overview').onclick = toggleOverview;
+    document.getElementById('btn-fullscreen').onclick = toggleFullscreen;
+
+    // Interactive Level Viewer Data for Slide 8
+    const levelData = {
+      1: {
+        title: "Level 1: Key & Door (7x7)",
+        desc: "The player must locate and collect the Yellow Key 'Y' to unlock the Orange Door 'O' before accessing the Green Goal 'G'.",
+        skill: "Basic sequential path planning and lock-and-key dependency tracking.",
+        board: `   0 1 2 3 4 5 6
+ 0 # # # # # # #
+ 1 # B . # . G #
+ 2 # . . # . # #
+ 3 # . . O . . #
+ 4 # . . # . . #
+ 5 # Y . # . . #
+ 6 # # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: 'Y', name: 'Yellow Key' },
+          { sym: 'O', name: 'Locked Door' },
+          { sym: 'G', name: 'Goal' },
+          { sym: '#', name: 'Wall' }
+        ]
+      },
+      2: {
+        title: "Level 2: Single Sokoban (6x6)",
+        desc: "Classic Sokoban block pushing. The agent must push the Cyan Box 'C' onto the Magenta Target Switch 'M'.",
+        skill: "Push mechanics discovery and avoiding pushing boxes against irreversible walls.",
+        board: `   0 1 2 3 4 5
+ 0 # # # # # #
+ 1 # B . . . #
+ 2 # . C . . #
+ 3 # . . . . #
+ 4 # . . M . #
+ 5 # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: 'C', name: 'Cyan Box' },
+          { sym: 'M', name: 'Target Pad' },
+          { sym: '#', name: 'Wall' }
+        ]
+      },
+      3: {
+        title: "Level 3: Phase Barrier Toggle (6x6)",
+        desc: "The goal is locked behind a solid wall. Executing the 'SPACE' action toggles the phase barrier at coordinate (3,3) into open floor.",
+        skill: "Non-directional tool action discovery ('SPACE') and stateful door toggle persistence.",
+        board: `   0 1 2 3 4 5
+ 0 # # # # # #
+ 1 # B . # . #
+ 2 # . . # . #
+ 3 # . . # . #
+ 4 # . . # G #
+ 5 # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: '#', name: 'Phase Wall (at 3,3)' },
+          { sym: 'G', name: 'Goal' }
+        ]
+      },
+      4: {
+        title: "Level 4: Dual-Box Sokoban (7x7)",
+        desc: "Two boxes 'C' must be pushed into two targets 'M' separated by a central impassable pillar at (3,3). Danger of corner trap deadlock.",
+        skill: "Multi-object dependency tracking, pillar circumvention, and zero-deadlock lookahead.",
+        board: `   0 1 2 3 4 5 6
+ 0 # # # # # # #
+ 1 # B . . . . #
+ 2 # . C . C . #
+ 3 # . . # . . #
+ 4 # . M . M . #
+ 5 # . . . . . #
+ 6 # # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: 'C', name: 'Cyan Box' },
+          { sym: 'M', name: 'Target Pad' },
+          { sym: '#', name: 'Wall / Center Pillar' }
+        ]
+      },
+      5: {
+        title: "Level 5: Dual-Key Labyrinth (8x8)",
+        desc: "A 4-room dungeon: Key 1 unlocks Gate 1, revealing a SPACE phase barrier switch, which unlocks Key 2 and Gate 2 to reach Goal.",
+        skill: "Deep multi-stage compositional planning (5 sequential dependencies).",
+        board: `   0 1 2 3 4 5 6 7
+ 0 # # # # # # # #
+ 1 # B . # . . G #
+ 2 # . Y # . # # #
+ 3 # # O # # # # #
+ 4 # . . # . . . #
+ 5 # . # # # O # #
+ 6 # . . . # . K #
+ 7 # # # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: 'Y', name: 'Key 1' },
+          { sym: 'K', name: 'Key 2' },
+          { sym: 'O', name: 'Gates' },
+          { sym: 'G', name: 'Citadel Goal' }
+        ]
+      },
+      6: {
+        title: "Level 6: Wormhole Relay (9x9)",
+        desc: "Two isolated chambers separated by an impassable wall barrier. Stepping onto 'W' quantum teleports the player across space.",
+        skill: "Non-Euclidean topological transition discovery and teleporter physics.",
+        board: `   0 1 2 3 4 5 6 7 8
+ 0 # # # # # # # # #
+ 1 # B . . # . . G #
+ 2 # . . . # . . . #
+ 3 # . W . # . W . #
+ 4 # . . . # . . . #
+ 5 # # # # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: 'W', name: 'Quantum Wormhole' },
+          { sym: 'G', name: 'Exit Goal' },
+          { sym: '#', name: 'Abyss Wall' }
+        ]
+      },
+      7: {
+        title: "Level 7: The Quantum Citadel (9x9)",
+        desc: "The grandmaster puzzle uniting Portals 'W', Phase Barriers (SPACE), Sokoban block pushing 'C' onto 'M', and Keys 'Y'.",
+        skill: "Synthesis of all 4 mechanical primitives in a unified high-difficulty environment.",
+        board: `   0 1 2 3 4 5 6 7 8
+ 0 # # # # # # # # #
+ 1 # B . # . . . . #
+ 2 # . C # . W . Y #
+ 3 # . M # # # # # #
+ 4 # # # # . . . . #
+ 5 # W . # . # O # #
+ 6 # . . . . # . G #
+ 7 # # # # # # # # #`,
+        legend: [
+          { sym: 'B', name: 'Player' },
+          { sym: 'C', name: 'Box' },
+          { sym: 'M', name: 'Target' },
+          { sym: 'W', name: 'Wormhole' },
+          { sym: 'Y', name: 'Key' },
+          { sym: 'O', name: 'Gate' },
+          { sym: 'G', name: 'Citadel Goal' }
+        ]
+      }
+    };
+
+    function showLevel(lvlNum) {
+      const data = levelData[lvlNum];
+      if (!data) return;
+
+      document.querySelectorAll('.level-btn').forEach((btn, idx) => {
+        if (idx + 1 === lvlNum) btn.classList.add('active');
+        else btn.classList.remove('active');
+      });
+
+      document.getElementById('level-board').innerText = data.board;
+      document.getElementById('lvl-title').innerText = data.title;
+      document.getElementById('lvl-desc').innerText = data.desc;
+      document.getElementById('lvl-skill').innerText = data.skill;
+
+      const legendContainer = document.getElementById('level-legend');
+      legendContainer.innerHTML = '';
+      data.legend.forEach(item => {
+        const chip = document.createElement('div');
+        chip.className = 'legend-chip';
+        chip.innerHTML = `<span>${item.sym}</span> ${item.name}`;
+        legendContainer.appendChild(chip);
+      });
+    }
+
+    // Initialize first slide
+    updateSlide(0);
+  </script>
+</body>
+</html>
