@@ -69,6 +69,17 @@ def create_mock_gridworld_solver():
     return mock_llm
 
 
+def create_mock_mcts_solver():
+    """Mock LLM policy prior generator for MCTS tree search demonstration."""
+    def mock_llm(messages: list[dict[str, str]]) -> str:
+        return (
+            '{"actions": [{"action": "DOWN", "prior": 0.7, "reason": "Move down along open corridor"}, '
+            '{"action": "RIGHT", "prior": 0.3, "reason": "Lateral maneuver toward goal"}], '
+            '"rationale": "Prioritize downward progress to avoid obstacles"}'
+        )
+    return mock_llm
+
+
 @click.command()
 @click.option("--game", type=click.Choice(["gridworld", "mini-arc"]), default="gridworld", help="Game to play.")
 @click.option("--level", type=int, default=1, help="Level for multi-level games (mini-arc 1-7).")
@@ -79,6 +90,8 @@ def create_mock_gridworld_solver():
 @click.option("--max-tokens", type=int, default=512, help="Max tokens per LLM completion (keeps turns concise).")
 @click.option("--demo", is_flag=True, help="Run an automated mock demo showing Duck Harness reasoning.")
 @click.option("--show-thinking", is_flag=True, default=False, help="Stream live model thinking/reasoning process to console.")
+@click.option("--mcts", is_flag=True, default=False, help="Enable LLM-Guided Monte Carlo Tree Search (Cách 2).")
+@click.option("--mcts-sims", type=int, default=10, help="Number of MCTS simulations per turn.")
 @click.option("--save-trace", type=click.Path(), default=None, help="Save execution trace to a JSON file.")
 def main(
     game: str,
@@ -90,6 +103,8 @@ def main(
     max_tokens: int,
     demo: bool,
     show_thinking: bool,
+    mcts: bool,
+    mcts_sims: int,
     save_trace: str | None,
 ) -> None:
     """Run the Duck Harness autonomous game agent."""
@@ -113,8 +128,12 @@ def main(
 
     # 2. Initialize LLM Client
     if demo:
-        console.print("[yellow]Running in DEMO mode with mock LLM reasoner.[/yellow]\n")
-        llm = LLMClient(mock_fn=create_mock_gridworld_solver(), max_tokens=max_tokens)
+        if mcts:
+            console.print("[yellow]Running in DEMO mode with mock MCTS policy prior generator.[/yellow]\n")
+            llm = LLMClient(mock_fn=create_mock_mcts_solver(), max_tokens=max_tokens)
+        else:
+            console.print("[yellow]Running in DEMO mode with mock LLM reasoner.[/yellow]\n")
+            llm = LLMClient(mock_fn=create_mock_gridworld_solver(), max_tokens=max_tokens)
     else:
         thinking_mode = "[bold magenta]ON[/bold magenta] (streaming live)" if show_thinking else "[dim]OFF (spinner only)[/dim]"
         console.print(
@@ -188,6 +207,8 @@ def main(
         on_step_callback=on_step,
         on_turn_start=on_turn_start,
         on_token=on_token,
+        use_mcts=mcts,
+        mcts_sims=mcts_sims,
     )
 
     # 4. Run loop

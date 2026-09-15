@@ -86,6 +86,7 @@ class GameExtension(Extension):
         game: str = "gridworld",
         level: int = 1,
         max_turns: int = 20,
+        mcts: bool = False,
     ) -> str:
         game_name = game.lower().strip()
         level = int(level)
@@ -109,6 +110,7 @@ class GameExtension(Extension):
             max_turns=max_turns,
             verbose=False,
             on_step_callback=on_step,
+            use_mcts=mcts,
         )
         result = agent.run()
 
@@ -161,6 +163,7 @@ class GameExtension(Extension):
         level = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
         # Default show_thinking to True so user always sees thinking, unless explicitly disabled with --no-thinking
         show_thinking = not any(p in ("--no-thinking", "no-thinking") for p in parts)
+        use_mcts = any(p in ("--mcts", "mcts") for p in parts)
         max_turns = 25
 
         if game_name == "mini-arc":
@@ -244,6 +247,7 @@ class GameExtension(Extension):
                     on_turn_start=on_turn_start,
                     on_token=on_token,
                     cancel_check=lambda: self._cancel_requested,
+                    use_mcts=use_mcts,
                 )
                 result = agent.run()
                 context.set_spinner("", key="game")

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from agent.memory import GameMemory, TurnRecord
+from agent.mcts import LLMGuidedMCTS, MCTSResult
 from agent.prompts import SYSTEM_PROMPT, build_turn_prompt
 from agent.repl import PythonREPL, REPLResult
 from env.environment import BaseEnvironment, Frame, Transition
@@ -52,6 +53,8 @@ class DuckAgent:
         on_turn_start: Callable[[int, Frame], None] | None = None,
         on_token: Callable[[int, str, bool], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        use_mcts: bool = False,
+        mcts_sims: int = 10,
     ) -> None:
         self.env = env
         self.llm = llm
@@ -62,6 +65,8 @@ class DuckAgent:
         self.on_turn_start = on_turn_start
         self.on_token = on_token
         self.cancel_check = cancel_check
+        self.use_mcts = use_mcts
+        self.mcts_sims = mcts_sims
 
         self.memory = GameMemory()
         self.repl = PythonREPL(env=self.env, world_model_ref=lambda: self.memory.world_model)
@@ -111,32 +116,67 @@ class DuckAgent:
             # 2. Context eviction / trimming
             self.messages = self.memory.trim_messages(self.messages)
 
-            # 3. Ask LLM with live token streaming
-            def _token_cb(delta: str, is_thinking: bool):
-                if self.on_token:
-                    try:
-                        self.on_token(turn_idx, delta, is_thinking)
-                    except Exception:
-                        pass
-
-            response = self.llm.generate(
-                self.messages,
-                on_token=_token_cb if self.on_token else None,
-            )
-            self.messages.append({"role": "assistant", "content": response})
-
-            # 4. Extract and execute Python code in sandbox REPL
-            code = extract_python_code(response)
+            # 3. Decision Making: LLM-Guided MCTS vs Standard REPL LLM
+            response: str = ""
+            code: str | None = None
             repl_res: REPLResult | None = None
             actions_in_turn: list[str] = []
 
-            if code:
+            if self.use_mcts:
+                if self.verbose:
+                    logger.info("Running LLM-Guided MCTS (sims=%d)...", self.mcts_sims)
+
+                mcts_engine = LLMGuidedMCTS(
+                    llm=self.llm,
+                    num_simulations=self.mcts_sims,
+                    verbose=self.verbose,
+                )
+                mcts_res: MCTSResult = mcts_engine.search(self.env, world_model=self.memory.world_model)
+
+                if mcts_res.winning_path:
+                    chosen_actions = mcts_res.winning_path
+                elif isinstance(mcts_res.best_action, list):
+                    chosen_actions = mcts_res.best_action
+                else:
+                    chosen_actions = [mcts_res.best_action]
+
+                rationale = mcts_res.llm_rationale or "MCTS highest visit path"
+                response = (
+                    f"MCTS tree search completed (visits={mcts_res.root_visits}, tree_size={mcts_res.tree_size}).\n"
+                    f"Rationale: {rationale}\n\n"
+                    f"```python\n"
+                    f"action({chosen_actions})\n"
+                    f"```"
+                )
+                self.messages.append({"role": "assistant", "content": response})
+
+                code = f"action({chosen_actions})"
                 repl_res = self.repl.execute(code)
                 last_repl_output = str(repl_res)
                 actions_in_turn = repl_res.actions_taken
             else:
-                last_repl_output = "(No Python code block found in response. Remember to use ```python ... ```)"
-                actions_in_turn = []
+                def _token_cb(delta: str, is_thinking: bool):
+                    if self.on_token:
+                        try:
+                            self.on_token(turn_idx, delta, is_thinking)
+                        except Exception:
+                            pass
+
+                response = self.llm.generate(
+                    self.messages,
+                    on_token=_token_cb if self.on_token else None,
+                )
+                self.messages.append({"role": "assistant", "content": response})
+
+                # 4. Extract and execute Python code in sandbox REPL
+                code = extract_python_code(response)
+                if code:
+                    repl_res = self.repl.execute(code)
+                    last_repl_output = str(repl_res)
+                    actions_in_turn = repl_res.actions_taken
+                else:
+                    last_repl_output = "(No Python code block found in response. Remember to use ```python ... ```)"
+                    actions_in_turn = []
 
             # 5. Check progress / idle stall
             if not actions_in_turn:
