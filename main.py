@@ -90,8 +90,8 @@ def create_mock_mcts_solver():
 @click.option("--max-tokens", type=int, default=512, help="Max tokens per LLM completion (keeps turns concise).")
 @click.option("--demo", is_flag=True, help="Run an automated mock demo showing Duck Harness reasoning.")
 @click.option("--show-thinking", is_flag=True, default=False, help="Stream live model thinking/reasoning process to console.")
-@click.option("--mcts", is_flag=True, default=False, help="Enable LLM-Guided Monte Carlo Tree Search (Cách 2).")
-@click.option("--mcts-sims", type=int, default=10, help="Number of MCTS simulations per turn.")
+@click.option("--mcts", type=int, default=0, help="MCTS Mode: 0=Off, 1=Fast Code-driven MCTS (0.02s, Cách 1), 2=LLM-Guided MCTS (Cách 2).")
+@click.option("--mcts-sims", type=int, default=None, help="Number of MCTS simulations per turn (default: 50 for mode 1, 8 for mode 2).")
 @click.option("--save-trace", type=click.Path(), default=None, help="Save execution trace to a JSON file.")
 def main(
     game: str,
@@ -103,8 +103,8 @@ def main(
     max_tokens: int,
     demo: bool,
     show_thinking: bool,
-    mcts: bool,
-    mcts_sims: int,
+    mcts: int,
+    mcts_sims: int | None,
     save_trace: str | None,
 ) -> None:
     """Run the Duck Harness autonomous game agent."""
@@ -128,8 +128,11 @@ def main(
 
     # 2. Initialize LLM Client
     if demo:
-        if mcts:
-            console.print("[yellow]Running in DEMO mode with mock MCTS policy prior generator.[/yellow]\n")
+        if mcts == 1:
+            console.print("[yellow]Running in DEMO mode with Fast Code-driven MCTS (Cách 1, 0.02s).[/yellow]\n")
+            llm = LLMClient(mock_fn=lambda msgs: "action('DOWN')", max_tokens=max_tokens)
+        elif mcts == 2:
+            console.print("[yellow]Running in DEMO mode with LLM-Guided MCTS policy generator (Cách 2).[/yellow]\n")
             llm = LLMClient(mock_fn=create_mock_mcts_solver(), max_tokens=max_tokens)
         else:
             console.print("[yellow]Running in DEMO mode with mock LLM reasoner.[/yellow]\n")

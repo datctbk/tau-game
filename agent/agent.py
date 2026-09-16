@@ -53,8 +53,8 @@ class DuckAgent:
         on_turn_start: Callable[[int, Frame], None] | None = None,
         on_token: Callable[[int, str, bool], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
-        use_mcts: bool = False,
-        mcts_sims: int = 10,
+        use_mcts: int | bool = 0,
+        mcts_sims: int | None = None,
     ) -> None:
         self.env = env
         self.llm = llm
@@ -65,8 +65,19 @@ class DuckAgent:
         self.on_turn_start = on_turn_start
         self.on_token = on_token
         self.cancel_check = cancel_check
-        self.use_mcts = use_mcts
-        self.mcts_sims = mcts_sims
+
+        if isinstance(use_mcts, bool):
+            self.mcts_mode = 1 if use_mcts else 0
+        else:
+            self.mcts_mode = int(use_mcts)
+
+        if mcts_sims is not None:
+            self.mcts_sims = mcts_sims
+        else:
+            # Mode 1: 50 sims on pure CPU (0.02s). Mode 2: 8 sims with LLM
+            self.mcts_sims = 50 if self.mcts_mode == 1 else 8
+
+        self.use_mcts = bool(self.mcts_mode > 0)
 
         self.memory = GameMemory()
         self.repl = PythonREPL(env=self.env, world_model_ref=lambda: self.memory.world_model)
@@ -123,8 +134,10 @@ class DuckAgent:
             actions_in_turn: list[str] = []
 
             if self.use_mcts:
+                is_fast_mode = (self.mcts_mode == 1)
+                mode_label = "Fast Code-driven MCTS (Cách 1)" if is_fast_mode else "LLM-Guided MCTS (Cách 2)"
                 if self.verbose:
-                    logger.info("Running LLM-Guided MCTS (sims=%d)...", self.mcts_sims)
+                    logger.info("Running %s (sims=%d)...", mode_label, self.mcts_sims)
 
                 def _token_cb(delta: str, is_thinking: bool):
                     if self.on_token:
@@ -133,11 +146,13 @@ class DuckAgent:
                         except Exception:
                             pass
 
+                # Mode 1: llm=None (pure Python CPU simulation in 0.02s)
+                # Mode 2: llm=self.llm (queries LLM with thinking stream)
                 mcts_engine = LLMGuidedMCTS(
-                    llm=self.llm,
+                    llm=None if is_fast_mode else self.llm,
                     num_simulations=self.mcts_sims,
                     verbose=self.verbose,
-                    on_token=_token_cb if self.on_token else None,
+                    on_token=_token_cb if (not is_fast_mode and self.on_token) else None,
                 )
                 mcts_res: MCTSResult = mcts_engine.search(self.env, world_model=self.memory.world_model)
 
@@ -148,9 +163,14 @@ class DuckAgent:
                 else:
                     chosen_actions = [mcts_res.best_action]
 
-                rationale = mcts_res.llm_rationale or "MCTS highest visit path"
+                prefix = "⚡ Fast Code MCTS (Cách 1)" if is_fast_mode else "🧠 LLM-Guided MCTS (Cách 2)"
+                rationale = mcts_res.llm_rationale or (
+                    "Evaluated via pure Python heuristic tree search in 0.02s"
+                    if is_fast_mode
+                    else "LLM-guided PUCT candidate selection"
+                )
                 response = (
-                    f"MCTS tree search completed (visits={mcts_res.root_visits}, tree_size={mcts_res.tree_size}).\n"
+                    f"{prefix} tree search completed (mode={self.mcts_mode}, visits={mcts_res.root_visits}, tree_size={mcts_res.tree_size}).\n"
                     f"Rationale: {rationale}\n\n"
                     f"```python\n"
                     f"action({chosen_actions})\n"

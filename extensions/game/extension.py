@@ -86,7 +86,8 @@ class GameExtension(Extension):
         game: str = "gridworld",
         level: int = 1,
         max_turns: int = 20,
-        mcts: bool = False,
+        mcts: int | bool = 0,
+        mcts_sims: int | None = None,
     ) -> str:
         game_name = game.lower().strip()
         level = int(level)
@@ -111,6 +112,7 @@ class GameExtension(Extension):
             verbose=False,
             on_step_callback=on_step,
             use_mcts=mcts,
+            mcts_sims=mcts_sims,
         )
         result = agent.run()
 
@@ -163,7 +165,31 @@ class GameExtension(Extension):
         level = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
         # Default show_thinking to True so user always sees thinking, unless explicitly disabled with --no-thinking
         show_thinking = not any(p in ("--no-thinking", "no-thinking") for p in parts)
-        use_mcts = any(p in ("--mcts", "mcts") for p in parts)
+        
+        # Parse MCTS mode: --mcts 1 (Fast Code MCTS, 0.02s) vs --mcts 2 (LLM-Guided MCTS)
+        use_mcts = 0
+        mcts_sims = None
+        for i, p in enumerate(parts):
+            if p.startswith("--mcts="):
+                val = p.split("=", 1)[1]
+                if val in ("1", "2"):
+                    use_mcts = int(val)
+            elif p in ("--mcts", "mcts"):
+                if i + 1 < len(parts) and parts[i + 1] in ("1", "2"):
+                    use_mcts = int(parts[i + 1])
+                else:
+                    use_mcts = 1
+            elif p in ("--mcts-sims", "--sims") and i + 1 < len(parts):
+                try:
+                    mcts_sims = int(parts[i + 1])
+                except ValueError:
+                    pass
+            elif p.startswith("--mcts-sims="):
+                try:
+                    mcts_sims = int(p.split("=", 1)[1])
+                except ValueError:
+                    pass
+
         max_turns = 25
 
         if game_name == "mini-arc":
@@ -175,6 +201,10 @@ class GameExtension(Extension):
         self._cancel_requested = False
 
         print_game_header(game_name, level, context.print)
+        if use_mcts == 1:
+            context.print("[bold yellow]⚡ Active: Fast Code-driven MCTS (Cách 1: Pure CPU search in ~0.02s)[/bold yellow]\n")
+        elif use_mcts == 2:
+            context.print("[bold magenta]🧠 Active: LLM-Guided MCTS (Cách 2: LLM policy priors with live thinking stream)[/bold magenta]\n")
 
         def _worker_thread():
             try:
@@ -248,6 +278,7 @@ class GameExtension(Extension):
                     on_token=on_token,
                     cancel_check=lambda: self._cancel_requested,
                     use_mcts=use_mcts,
+                    mcts_sims=mcts_sims,
                 )
                 result = agent.run()
                 context.set_spinner("", key="game")

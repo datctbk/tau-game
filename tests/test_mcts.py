@@ -178,3 +178,37 @@ def test_mcts_streams_thinking_tokens():
     assert len(thinking_tokens) >= 2
     assert "Thinking about best moves..." in thinking_tokens
 
+
+def test_duck_agent_mcts_modes():
+    """Verify DuckAgent behavior with use_mcts=1 (Fast Code) vs use_mcts=2 (LLM-Guided)."""
+    # 1. Mode 1: Fast Code-driven (Pure Python search, no LLM calls)
+    env1 = GridWorld()
+    dummy_llm = LLMClient(mock_fn=lambda msgs: "invalid")
+    agent_mode1 = DuckAgent(env=env1, llm=dummy_llm, max_turns=5, use_mcts=1, mcts_sims=50, verbose=False)
+    assert agent_mode1.mcts_mode == 1
+    res1 = agent_mode1.run()
+    assert res1.solved
+    assert res1.total_steps <= 10
+
+    # 2. Mode 2: LLM-Guided
+    def mock_prior(msgs, on_token=None):
+        if on_token:
+            on_token("<think>Analyzing board</think>", True)
+        return '{"actions": [{"action": "DOWN", "prior": 0.8}, {"action": "RIGHT", "prior": 0.2}]}'
+
+    tokens_streamed = []
+    env2 = GridWorld()
+    llm2 = LLMClient(mock_fn=mock_prior)
+    agent_mode2 = DuckAgent(
+        env=env2,
+        llm=llm2,
+        max_turns=2,
+        use_mcts=2,
+        mcts_sims=4,
+        on_token=lambda t, d, is_t: tokens_streamed.append((d, is_t)),
+        verbose=False,
+    )
+    assert agent_mode2.mcts_mode == 2
+    agent_mode2.run()
+    assert len(tokens_streamed) > 0
+
