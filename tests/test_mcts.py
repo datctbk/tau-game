@@ -151,3 +151,30 @@ def test_mcts_sokoban_level2_avoids_deadlock():
     assert result.best_action in env.valid_actions()
     assert result.best_action != "RESET"
     assert result.tree_size > 1
+
+
+def test_mcts_streams_thinking_tokens():
+    """Verify LLMGuidedMCTS correctly pipes reasoning/thinking tokens to on_token."""
+    env = GridWorld()
+    captured_tokens: list[tuple[str, bool]] = []
+
+    def mock_thinking_llm(messages, on_token=None):
+        if on_token:
+            on_token("Thinking about best moves...", True)
+            on_token("Done thinking.", True)
+            on_token('{"actions": [{"action": "DOWN", "prior": 1.0}]}', False)
+        return '{"actions": [{"action": "DOWN", "prior": 1.0}]}'
+
+    mock_llm = LLMClient(mock_fn=mock_thinking_llm)
+    mcts = LLMGuidedMCTS(
+        llm=mock_llm,
+        num_simulations=4,
+        on_token=lambda d, is_t: captured_tokens.append((d, is_t)),
+    )
+
+    res = mcts.search(env)
+    assert len(captured_tokens) > 0
+    thinking_tokens = [t for t, is_t in captured_tokens if is_t]
+    assert len(thinking_tokens) >= 2
+    assert "Thinking about best moves..." in thinking_tokens
+

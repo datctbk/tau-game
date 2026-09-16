@@ -157,6 +157,7 @@ class LLMGuidedMCTS:
         max_depth: int = 8,
         rollout_steps: int = 3,
         verbose: bool = False,
+        on_token: Callable[[str, bool], None] | None = None,
     ) -> None:
         self.llm = llm
         self.num_simulations = num_simulations
@@ -164,6 +165,7 @@ class LLMGuidedMCTS:
         self.max_depth = max_depth
         self.rollout_steps = rollout_steps
         self.verbose = verbose
+        self.on_token = on_token
 
     def search(
         self,
@@ -370,7 +372,7 @@ class LLMGuidedMCTS:
 
         try:
             messages = [{"role": "user", "content": prompt}]
-            resp = self.llm.generate(messages)
+            resp = self.llm.generate(messages, on_token=self.on_token)
 
             # Try to parse JSON from response
             match = re.search(r"\{.*\}", resp, re.DOTALL)

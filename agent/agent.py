@@ -126,10 +126,18 @@ class DuckAgent:
                 if self.verbose:
                     logger.info("Running LLM-Guided MCTS (sims=%d)...", self.mcts_sims)
 
+                def _token_cb(delta: str, is_thinking: bool):
+                    if self.on_token:
+                        try:
+                            self.on_token(turn_idx, delta, is_thinking)
+                        except Exception:
+                            pass
+
                 mcts_engine = LLMGuidedMCTS(
                     llm=self.llm,
                     num_simulations=self.mcts_sims,
                     verbose=self.verbose,
+                    on_token=_token_cb if self.on_token else None,
                 )
                 mcts_res: MCTSResult = mcts_engine.search(self.env, world_model=self.memory.world_model)
 

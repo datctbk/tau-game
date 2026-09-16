@@ -177,7 +177,10 @@ class LLMClient:
         """Generate assistant response given conversation messages with streaming support."""
         # 1. Mock response for testing
         if self.mock_fn is not None:
-            return self.mock_fn(messages)
+            try:
+                return self.mock_fn(messages, on_token=on_token)
+            except TypeError:
+                return self.mock_fn(messages)
 
         # 2. Extension sub-session (when running inside active Tau CLI)
         if self.extension_context is not None:
