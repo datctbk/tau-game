@@ -241,16 +241,24 @@ class LLMGuidedMCTS:
             # Phase D: Backpropagate
             self._backpropagate(node, val)
 
-        # 4. Pick best action by highest visit count with Q-value tie-breaker
+        # 4. Pick best action: prioritize winning sequence, then highest visit count among viable actions
         action_scores: dict[str, float] = {}
         for act, child in root.children.items():
             action_scores[act] = float(child.visit_count)
+
+        # Exclude blocked actions or dead ends from best_act selection
+        viable_actions = [
+            act for act, child in root.children.items()
+            if not (child.is_terminal and not child.state.is_done()) and child.q_value > -0.9
+        ]
+        if not viable_actions:
+            viable_actions = list(root.children.keys())
 
         if winning_sequence:
             best_act = winning_sequence[0]
         else:
             best_act = max(
-                root.children.keys(),
+                viable_actions,
                 key=lambda a: (root.children[a].visit_count, root.children[a].q_value),
             )
 
@@ -304,8 +312,13 @@ class LLMGuidedMCTS:
         if candidate_filter:
             forward_actions = candidate_filter(forward_actions) or forward_actions
 
-        # Get action priors from LLM or fallback
-        priors, reasoning = self._get_action_priors(node, forward_actions, world_model)
+        # In Mode 2: Query LLM only at the Root Node (depth == 0) to get policy priors for candidate actions.
+        # Deeper nodes use fast heuristic priors (10x faster, exactly 1 LLM call per turn!).
+        if node.depth == 0 and self.llm is not None:
+            priors, reasoning = self._get_action_priors(node, forward_actions, world_model)
+        else:
+            prob = 1.0 / len(forward_actions) if forward_actions else 1.0
+            priors, reasoning = {a: prob for a in forward_actions}, "Tree expansion heuristic prior"
         node.reasoning = reasoning
 
         count = 0
@@ -395,7 +408,20 @@ class LLMGuidedMCTS:
         except Exception as err:
             logger.debug("LLM prior generation error: %s", err)
 
-        # Fallback: uniform prior over valid actions
+        # Fallback 1: extract actions mentioned in plain text/thought if JSON failed
+        try:
+            mentioned = [a for a in valid_actions if re.search(rf"\b{a}\b", resp.upper())]
+            if mentioned:
+                priors = {
+                    a: (0.8 / len(mentioned) if a in mentioned else 0.2 / max(1, len(valid_actions) - len(mentioned)))
+                    for a in valid_actions
+                }
+                total = sum(priors.values())
+                return {k: v / total for k, v in priors.items()}, "Extracted actions from LLM reasoning"
+        except Exception:
+            pass
+
+        # Fallback 2: uniform prior over valid actions
         prob = 1.0 / len(valid_actions)
         return {a: prob for a in valid_actions}, "Fallback heuristic prior"
 
