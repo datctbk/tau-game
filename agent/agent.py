@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from agent.discovery_tree import DiscoveryTree
 from agent.memory import GameMemory, TurnRecord
 from agent.mcts import LLMGuidedMCTS, MCTSResult
 from agent.prompts import SYSTEM_PROMPT, build_turn_prompt
@@ -27,6 +28,7 @@ class GameRunResult:
     world_model: str
     turns: list[TurnRecord] = field(default_factory=list)
     history: list[Transition] = field(default_factory=list)
+    discovery_tree: DiscoveryTree | None = None
 
     def summary(self) -> str:
         status = "SOLVED ✓" if self.solved else "UNSOLVED ✗"
@@ -55,6 +57,7 @@ class DuckAgent:
         cancel_check: Callable[[], bool] | None = None,
         use_mcts: int | bool = 0,
         mcts_sims: int | None = None,
+        use_rsi: bool = False,
     ) -> None:
         self.env = env
         self.llm = llm
@@ -65,6 +68,7 @@ class DuckAgent:
         self.on_turn_start = on_turn_start
         self.on_token = on_token
         self.cancel_check = cancel_check
+        self.use_rsi = use_rsi
 
         if isinstance(use_mcts, bool):
             self.mcts_mode = 1 if use_mcts else 0
@@ -87,6 +91,8 @@ class DuckAgent:
         """Run the main observe-reason-code-action loop."""
         initial_frame = self.env.reset()
         self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.tree = DiscoveryTree(root_frame=initial_frame)
+        current_parent_id = self.tree.root_id
 
         last_repl_output: str | None = None
         last_actions: list[str] | None = None
@@ -113,7 +119,7 @@ class DuckAgent:
 
             prev_info = dict(curr_frame.info or {})
 
-            # 1. Build observation prompt
+            # 1. Build observation prompt with empirical facts
             user_prompt = build_turn_prompt(
                 current_frame=curr_frame,
                 valid_actions=self.env.valid_actions(),
@@ -121,6 +127,7 @@ class DuckAgent:
                 recent_actions=last_actions,
                 last_repl_output=last_repl_output,
                 previous_frame=self.env.previous_frame,
+                empirical_facts=self.memory.empirical_facts,
             )
             self.messages.append({"role": "user", "content": user_prompt})
 
@@ -224,13 +231,30 @@ class DuckAgent:
                 current_info=dict(self.env.current_frame.info or {}),
             )
 
+            # Record node in discovery tree for Dream-RSI
+            curr_score = sum(t.reward for t in self.env.history)
+            attempt_node = self.tree.add_attempt(
+                parent_id=current_parent_id,
+                actions=actions_in_turn,
+                frame=self.env.current_frame,
+                code=code,
+                repl_output=last_repl_output,
+                score=curr_score,
+                done=self.env.is_done(),
+                error=repl_res.error if repl_res else None,
+            )
+            current_parent_id = attempt_node.node_id
+
             last_actions = actions_in_turn
 
             if self.on_step_callback:
                 try:
-                    self.on_step_callback(turn_idx, self.memory.turns[-1], self.env)
+                    self.on_step_callback(turn_idx, self.memory.turns[-1], self.env, attempt_node, self.tree)
                 except TypeError:
-                    self.on_step_callback(turn_idx, self.memory.turns[-1])
+                    try:
+                        self.on_step_callback(turn_idx, self.memory.turns[-1], self.env)
+                    except TypeError:
+                        self.on_step_callback(turn_idx, self.memory.turns[-1])
 
             if self.verbose:
                 act_str = f"actions={actions_in_turn}" if actions_in_turn else "inspecting"
@@ -254,4 +278,5 @@ class DuckAgent:
             world_model=self.memory.world_model,
             turns=list(self.memory.turns),
             history=list(self.env.history),
+            discovery_tree=self.tree,
         )

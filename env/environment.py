@@ -69,6 +69,11 @@ class Transition:
             "info": self.info,
         }
 
+    def __repr__(self) -> str:
+        inv = [k for k, v in self.info.items() if v is True and k != "space_toggle"]
+        inv_str = f", inv={inv}" if inv else ""
+        return f"Transition(step={self.step}, action='{self.action}', reward={self.reward}, done={self.done}{inv_str})"
+
 
 class BaseEnvironment(ABC):
     """Abstract base class for all game environments in tau-game."""

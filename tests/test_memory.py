@@ -61,3 +61,26 @@ def test_memory_context_eviction():
     assert len(trimmed) == 5
     assert trimmed[1]["content"] == "Turn 2 obs"
     assert trimmed[-1]["content"] == "Turn 3 reply"
+
+
+def test_memory_empirical_facts_extraction():
+    memory = GameMemory()
+    repl_output = """Step transitions:
+  - SPACE: (1,3) #->.
+  - RIGHT: (1,6) B->., (7,1) W->B
+  - LEFT: blocked (no change)"""
+
+    memory.record_turn(
+        step=1,
+        observation_summary="test",
+        response="Testing facts",
+        code='action(["SPACE", "RIGHT", "LEFT"])',
+        repl_output=repl_output,
+        actions=["SPACE", "RIGHT", "LEFT"],
+    )
+
+    assert len(memory.empirical_facts) == 3
+    assert any("Barrier change" in f and "(1,3) #->." in f for f in memory.empirical_facts)
+    assert any("Movement / displacement" in f and "(7,1) W->B" in f for f in memory.empirical_facts)
+    assert any("Blocked move" in f for f in memory.empirical_facts)
+

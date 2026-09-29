@@ -165,3 +165,86 @@ def print_game_header(game_name: str, level: int, print_fn: Callable[[Any], None
         padding=(1, 2),
     )
     print_fn(panel)
+
+
+def build_dream_rsi_step_panel(
+    turn_idx: int,
+    node: Any,
+    tree: Any,
+    policy: Any = None,
+) -> Panel:
+    """Build a rich visual step panel for Dream-RSI meta-exploration."""
+    from agent.meta_policy import OptimalPolicy
+
+    if policy is None:
+        policy = OptimalPolicy(beta=0.5)
+
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="bold cyan", no_wrap=True)
+    grid.add_column()
+
+    # 1. Node Identity & Delta
+    delta_val = getattr(node, "delta_vs_parent", 0.0)
+    delta_str = f"+{delta_val:.2f}" if delta_val > 0 else f"{delta_val:.2f}"
+    delta_color = "green" if delta_val > 0 else ("red" if delta_val < 0 else "dim")
+
+    parent_name = getattr(node, "parent_id", None) or "ROOT"
+    node_name = getattr(node, "node_id", f"node_{turn_idx}")
+    depth = getattr(node, "depth", turn_idx)
+    score = getattr(node, "score", 0.0)
+
+    grid.add_row("🌲 Active Node:", f"[bold]{node_name}[/bold] (Depth: {depth}, Parent: {parent_name})")
+    grid.add_row("📊 Exploration Score:", f"[bold]{score:.2f}[/bold] ([{delta_color}]Δ = {delta_str}[/{delta_color}])")
+
+    # 2. Status / Failure Diagnosis
+    fail_class = getattr(node, "fail_class", "ok")
+    err_msg = getattr(node, "error", None)
+
+    if fail_class == "repairable_code":
+        diag_badge = f"[bold yellow]⚠️ REPAIRABLE CODE FAILURE ({err_msg or 'Syntax/Index Error'})[/bold yellow]"
+        diag_desc = "[dim italic]↳ Recovery Queue Active: Kept alive for repair; branch direction not abandoned.[/dim italic]"
+    elif fail_class == "blocked_mechanic":
+        diag_badge = "[bold magenta]🚧 BLOCKED MECHANIC (Obstacle / Precondition Missing)[/bold magenta]"
+        diag_desc = "[dim italic]↳ Preserving branch anchor; awaiting key / switch from alternate path.[/dim italic]"
+    elif fail_class == "dead_end":
+        diag_badge = "[bold red]✗ DEAD END[/bold red]"
+        diag_desc = "[dim italic]↳ Hard unrecoverable state; marked for pruning.[/dim italic]"
+    else:
+        diag_badge = "[bold green]✓ SUCCESSFUL TRANSITION[/bold green]"
+        diag_desc = "[dim italic]↳ Valid execution; established as promising candidate for deepening.[/dim italic]"
+
+    grid.add_row("🔍 Diagnosis:", f"{diag_badge}\n  {diag_desc}")
+
+    # 3. Dynamic Portfolio Queues
+    legal_leaves = tree.get_leaves() if tree and hasattr(tree, "get_leaves") else []
+    nodes_dict = tree.nodes if tree and hasattr(tree, "nodes") else {node_name: node}
+    exploit_q, explore_q, recovery_q = policy.rank_candidates(
+        nodes_dict,
+        legal_leaves,
+        baseline_score=0.0,
+    )
+    top_exploit = exploit_q[0] if exploit_q else "(none)"
+    top_explore = explore_q[0] if explore_q else "(none)"
+    top_recovery = recovery_q[0] if recovery_q else "(none)"
+
+    grid.add_row(
+        "🎯 Portfolio Queues:",
+        f"[green]Exploit:[/green] {top_exploit} | [cyan]Explore:[/cyan] {top_explore} | [yellow]Recovery:[/yellow] {top_recovery}",
+    )
+
+    # 4. Global Tree Progress
+    total_nodes = len(tree.nodes) if tree and hasattr(tree, "nodes") else 1
+    best_score = tree.best_node().score if tree and hasattr(tree, "best_node") else score
+    grid.add_row(
+        "🌐 Discovery Tree:",
+        f"[bold]{total_nodes}[/bold] nodes recorded | [bold]{len(legal_leaves)}[/bold] open frontiers | Best: [bold yellow]{best_score:.2f}[/bold yellow]",
+    )
+
+    return Panel(
+        grid,
+        title=f"[bold magenta]🌲 Dream-RSI Step {turn_idx}: Exploration Meta-Decision[/bold magenta]",
+        border_style="magenta",
+        box=ROUNDED,
+        padding=(0, 2),
+    )
+

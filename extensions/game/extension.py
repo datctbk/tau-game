@@ -131,7 +131,7 @@ class GameExtension(Extension):
         return [
             SlashCommand(
                 name="game",
-                description="Play games via Duck Harness: /game [gridworld|mini-arc] [level] [--show-thinking] or /game stop",
+                description="Play games via Duck Harness: /game [gridworld|mini-arc] [level] [--mcts 1|2] or /game rsi or /game stop",
             )
         ]
 
@@ -140,6 +140,7 @@ class GameExtension(Extension):
             return False
 
         import threading
+        from rich.console import Console
         from rich.panel import Panel
         from agent.progress import build_turn_panel, print_game_header
 
@@ -161,8 +162,30 @@ class GameExtension(Extension):
             )
             return True
 
-        game_name = first_arg
-        level = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+        # Check if user requested Dream-RSI mode anywhere in arguments:
+        is_rsi = any(p in ("--dream-rsi", "--rsi", "rsi", "dream", "dream-rsi") for p in parts)
+        is_demo = any(p in ("--demo", "demo") for p in parts)
+
+        # Identify game name and level
+        game_name = "mini-arc" if any("mini-arc" in p.lower() for p in parts) else "gridworld"
+        level = 1
+        for p in parts:
+            if p.isdigit():
+                level = int(p)
+                break
+            elif p.startswith("--level="):
+                try:
+                    level = int(p.split("=")[1])
+                    break
+                except ValueError:
+                    pass
+
+        # If user explicitly wants mock demo mode:
+        if is_rsi and is_demo:
+            from main import run_dream_rsi_demo
+            out_console = getattr(context, "_console", None) or Console()
+            run_dream_rsi_demo(game_name, level, out_console)
+            return True
         # Default show_thinking to True so user always sees thinking, unless explicitly disabled with --no-thinking
         show_thinking = not any(p in ("--no-thinking", "no-thinking") for p in parts)
         
@@ -205,6 +228,8 @@ class GameExtension(Extension):
             context.print("[bold yellow]⚡ Active: Fast Code-driven MCTS (Cách 1: Pure CPU search in ~0.02s)[/bold yellow]\n")
         elif use_mcts == 2:
             context.print("[bold magenta]🧠 Active: LLM-Guided MCTS (Cách 2: LLM policy priors with live thinking stream)[/bold magenta]\n")
+        if is_rsi:
+            context.print("[bold magenta]✨ Dream-RSI Active: Live LLM Exploration + Post-Game Zero-Cost Dreaming[/bold magenta]\n")
 
         def _worker_thread():
             try:
@@ -255,7 +280,7 @@ class GameExtension(Extension):
                                 key="game",
                             )
 
-                def on_step(turn_idx: int, turn_record, curr_env):
+                def on_step(turn_idx: int, turn_record, curr_env, node=None, tree=None):
                     if think_buffer:
                         chunk = "".join(think_buffer)
                         think_buffer.clear()
@@ -267,7 +292,13 @@ class GameExtension(Extension):
                     panel = build_turn_panel(turn_idx, turn_record, curr_env, max_turns=max_turns)
                     context.print(panel)
 
-                llm = LLMClient(extension_context=context, max_tokens=512)
+                    # Display real-time Dream-RSI meta-decision step
+                    if is_rsi and node is not None:
+                        from agent.progress import build_dream_rsi_step_panel
+                        rsi_step_panel = build_dream_rsi_step_panel(turn_idx, node, tree or agent.tree)
+                        context.print(rsi_step_panel)
+
+                llm = LLMClient(extension_context=context, max_tokens=1536)
                 agent = DuckAgent(
                     env=env,
                     llm=llm,
@@ -279,6 +310,7 @@ class GameExtension(Extension):
                     cancel_check=lambda: self._cancel_requested,
                     use_mcts=use_mcts,
                     mcts_sims=mcts_sims,
+                    use_rsi=is_rsi,
                 )
                 result = agent.run()
                 context.set_spinner("", key="game")
@@ -304,6 +336,82 @@ class GameExtension(Extension):
                             border_style="red",
                         )
                     )
+
+                # Post-Game Dream-RSI Dreaming Phase
+                if is_rsi and result.discovery_tree and len(result.discovery_tree.nodes) > 1:
+                    from rsi.dreaming import DreamingOptimizer
+                    from rich.table import Table
+
+                    context.print("\n[bold magenta]✨ Dream-RSI: Stage 3 Offline Dreaming on Live Exploration Tree ✨[/bold magenta]")
+                    context.print(
+                        f"[dim]Analyzing real discovery tree: {len(result.discovery_tree.nodes)} nodes, "
+                        f"{len(result.discovery_tree.get_leaves())} frontier branches.[/dim]"
+                    )
+                    context.print("[dim]Simulating alternative exploration policies at ZERO LLM token cost...[/dim]\n")
+
+                    optimizer = DreamingOptimizer(
+                        trees=[result.discovery_tree],
+                        beta1=0.05,
+                        beta2=0.1,
+                        max_parallelism=3,
+                    )
+                    def on_dream_step(step_idx: int, total_steps: int, b: float, metrics_list: list) -> None:
+                        m = metrics_list[0] if metrics_list else None
+                        if m:
+                            context.print(
+                                f"  [bold magenta]•[/bold magenta] [dim]Step [{step_idx}/{total_steps}]:[/dim] "
+                                f"Policy π(β=[bold]{b:.1f}[/bold]) ──► "
+                                f"Probes: [bold]{m.total_probes}[/bold] in [bold]{m.decision_rounds}[/bold] rounds | "
+                                f"Attainment: [yellow]{m.best_score:.2f}[/yellow] | "
+                                f"Pareto Reward: [bold cyan]{m.pareto_reward:.4f}[/bold cyan]"
+                            )
+
+                    candidate_betas = [0.1, 0.3, 0.5, 0.7, 0.9]
+                    dream_res = optimizer.optimize(candidate_betas=candidate_betas, on_progress=on_dream_step)
+                    context.print("")
+
+                    table = Table(
+                        title="Dream-RSI Offline Policy Evaluation (Live Traces Replay)",
+                        show_header=True,
+                        header_style="bold cyan",
+                    )
+                    table.add_column("Beta (β)", style="bold", justify="center")
+                    table.add_column("Attainment (Score)", justify="center")
+                    table.add_column("Probes (Compute)", justify="center")
+                    table.add_column("Pareto Reward", justify="center")
+                    table.add_column("Strategy Behavior", justify="left")
+
+                    for row in dream_res.evaluations_summary:
+                        b = row["beta"]
+                        behavior = (
+                            "Aggressive Pruning (Low Patience)"
+                            if b <= 0.2
+                            else (
+                                "Balanced Dynamic Portfolio"
+                                if b <= 0.6
+                                else "High-Patience Deep Exploration"
+                            )
+                        )
+                        is_best = b == dream_res.best_beta
+                        star = " ★ (Selected)" if is_best else ""
+                        table.add_row(
+                            f"{b:.1f}{star}",
+                            f"{row['mean_score']:.2f}",
+                            f"{row['mean_probes']:.1f}",
+                            f"[bold green]{row['mean_pareto_reward']:.4f}[/bold green]"
+                            if is_best
+                            else f"{row['mean_pareto_reward']:.4f}",
+                            behavior,
+                        )
+
+                    context.print(table)
+                    context.print(
+                        f"\n[bold green]✓ Upgraded Policy Selected:[/bold green] Optimal β = [bold]{dream_res.best_beta}[/bold]"
+                    )
+                    context.print(
+                        f"[bold]Pareto Reward:[/bold] {dream_res.mean_pareto_reward:.4f} across {dream_res.total_simulated_probes} zero-cost simulated probes."
+                    )
+                    context.print("[dim]Exploration policy updated for subsequent runs![/dim]\n")
             except Exception as exc:
                 context.set_spinner("", key="game")
                 context.print(f"[bold red]Error during game execution:[/bold red] {exc}")

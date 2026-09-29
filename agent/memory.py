@@ -29,6 +29,36 @@ class GameMemory:
         self.max_chars_in_context = max_chars_in_context
         self.world_model: str = ""
         self.turns: list[TurnRecord] = []
+        self.empirical_facts: list[str] = []
+
+    def update_empirical_facts(self, repl_output: str | None) -> None:
+        """Extract verified physical transitions from REPL output without domain bias."""
+        if not repl_output:
+            return
+
+        for line in repl_output.splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                transition = line[2:].strip()
+                # Check for significant state changes (e.g. wall toggles, pushes, teleports)
+                if "blocked (no change)" in transition:
+                    # Keep concise note of blocked directions
+                    fact = f"Blocked move: {transition}"
+                elif "->." in transition and "->#" in transition:
+                    fact = f"Toggle mechanism observed: {transition}"
+                elif any(sym in transition for sym in ("#->.", ".->#")):
+                    fact = f"Barrier change observed: {transition}"
+                elif len(transition.split(",")) >= 2 and any("B->" in part for part in transition.split(",")):
+                    fact = f"Movement / displacement transition: {transition}"
+                else:
+                    fact = f"Physical effect observed: {transition}"
+
+                if fact not in self.empirical_facts:
+                    self.empirical_facts.append(fact)
+
+        # Cap memory to most recent 10 unique empirical facts
+        if len(self.empirical_facts) > 10:
+            self.empirical_facts = self.empirical_facts[-10:]
 
     def update_world_model(self, text: str) -> None:
         """Extract and update world model insights from LLM response or user override."""
@@ -69,6 +99,7 @@ class GameMemory:
             current_info=current_info,
         )
         self.turns.append(turn)
+        self.update_empirical_facts(repl_output)
         self.update_world_model(response)
 
     def trim_messages(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:

@@ -77,7 +77,96 @@ def create_mock_mcts_solver():
             '{"action": "RIGHT", "prior": 0.3, "reason": "Lateral maneuver toward goal"}], '
             '"rationale": "Prioritize downward progress to avoid obstacles"}'
         )
-    return mock_llm
+def run_dream_rsi_demo(game: str, level: int, console: Console) -> None:
+    """Run an interactive demonstration of Dream-RSI on the puzzle environment."""
+    from agent.discovery_tree import DiscoveryTree
+    from agent.meta_policy import OptimalPolicy
+    from rsi.dreaming import DreamingOptimizer
+    from rsi.evaluator import ParetoEvaluator
+    from rsi.orchestrator import DreamRSIOrchestrator
+    from rsi.replay_sim import PuzzleReplaySimulator
+
+    console.print(
+        Panel.fit(
+            "[bold magenta]✨ Dream-RSI: Recursive Self-Improvement via Evolving Worlds ✨[/bold magenta]\n"
+            "[dim]Paper: 'Dream-RSI: Recursive Self-Improvement through Evolving Worlds' (DeepMind 2026)[/dim]\n\n"
+            "[bold white]Core Cycle:[/bold white] Online Exploration ──► World Model Simulator ──► Offline Dreaming",
+            border_style="magenta",
+        )
+    )
+
+    env = GridWorld() if game == "gridworld" else MiniArcGame(level=level)
+
+    # Stage 1: Online Exploration
+    console.print("\n[bold cyan]─── Stage 1: Online Exploration & Discovery Tree Logging ───[/bold cyan]")
+    tree = DiscoveryTree(root_frame=env.reset())
+    # Generate an illustrative multi-branch tree with successful and failed attempts
+    r0 = tree.root_id
+    b1_1 = tree.add_attempt(r0, ["RIGHT"], env.current_frame, score=0.2)
+    b1_2 = tree.add_attempt(b1_1.node_id, ["RIGHT"], env.current_frame, score=0.5)
+    b1_3 = tree.add_attempt(b1_2.node_id, ["DOWN"], env.current_frame, score=0.8)
+    b1_4 = tree.add_attempt(b1_3.node_id, ["DOWN"], env.current_frame, score=1.0, done=True)
+
+    b2_1 = tree.add_attempt(r0, ["DOWN"], env.current_frame, score=0.1)
+    b2_2 = tree.add_attempt(b2_1.node_id, ["DOWN"], env.current_frame, score=0.1, error="IndexError: grid boundary reached", fail_class="repairable_code")
+
+    b3_1 = tree.add_attempt(r0, ["LEFT"], env.current_frame, score=-0.5, fail_class="dead_end")
+
+    console.print(f"✓ Recorded exploration tree with [bold green]{len(tree.nodes)} nodes[/bold green].")
+    console.print(f"  - Leaves: {len(tree.get_leaves())} frontier branches")
+    console.print(f"  - Highest online score: [bold yellow]{tree.best_node().score}[/bold yellow]")
+
+    # Stage 2: World Simulator Construction
+    console.print("\n[bold cyan]─── Stage 2: Simulator Construction (Replay World) ───[/bold cyan]")
+    sim = PuzzleReplaySimulator(tree=tree, max_parallelism=3)
+    console.print(f"✓ Replay simulator constructed. Prefix root ready with {len(sim.legal_actions())} branch roots.")
+
+    # Stage 3: Dreaming-Based Policy Improvement
+    console.print("\n[bold cyan]─── Stage 3: Dreaming-Based Policy Improvement (Offline Optimization) ───[/bold cyan]")
+    console.print("[dim]Simulating alternative exploration policies at ZERO LLM token cost...[/dim]\n")
+
+    def on_dream_step(step_idx: int, total_steps: int, b: float, metrics_list: list) -> None:
+        m = metrics_list[0] if metrics_list else None
+        if m:
+            console.print(
+                f"  [bold magenta]•[/bold magenta] [dim]Step [{step_idx}/{total_steps}]:[/dim] "
+                f"Policy π(β=[bold]{b:.1f}[/bold]) ──► "
+                f"Probes: [bold]{m.total_probes}[/bold] in [bold]{m.decision_rounds}[/bold] rounds | "
+                f"Attainment: [yellow]{m.best_score:.2f}[/yellow] | "
+                f"Pareto Reward: [bold cyan]{m.pareto_reward:.4f}[/bold cyan]"
+            )
+
+    optimizer = DreamingOptimizer(trees=[tree], beta1=0.05, beta2=0.1, max_parallelism=3)
+    candidate_betas = [0.1, 0.3, 0.5, 0.7, 0.9]
+    dream_res = optimizer.optimize(candidate_betas=candidate_betas, on_progress=on_dream_step)
+    console.print("")
+
+    table = Table(title="Dream-RSI Offline Policy Evaluation (Pareto Sweep)", show_header=True, header_style="bold cyan")
+    table.add_column("Beta (β)", style="bold", justify="center")
+    table.add_column("Attainment (Score)", justify="center")
+    table.add_column("Probes (Compute)", justify="center")
+    table.add_column("Pareto Reward", justify="center")
+    table.add_column("Strategy Behavior", justify="left")
+
+    for row in dream_res.evaluations_summary:
+        b = row["beta"]
+        behavior = "Aggressive Pruning (Low Patience)" if b <= 0.2 else (
+            "Balanced Dynamic Portfolio" if b <= 0.6 else "High-Patience Deep Exploration"
+        )
+        is_best = (b == dream_res.best_beta)
+        star = " ★ (Selected)" if is_best else ""
+        table.add_row(
+            f"{b:.1f}{star}",
+            f"{row['mean_score']:.2f}",
+            f"{row['mean_probes']:.1f}",
+            f"[bold green]{row['mean_pareto_reward']:.4f}[/bold green]" if is_best else f"{row['mean_pareto_reward']:.4f}",
+            behavior,
+        )
+
+    console.print(table)
+    console.print(f"\n[bold green]✓ Upgraded Policy Selected:[/bold green] Optimal β = [bold]{dream_res.best_beta}[/bold]")
+    console.print(f"[bold]Pareto Reward:[/bold] {dream_res.mean_pareto_reward:.4f} across {dream_res.total_simulated_probes} zero-cost simulated probes.")
+    console.print("[dim]Ready to deploy upgraded policy to online round 2![/dim]\n")
 
 
 @click.command()
@@ -89,6 +178,7 @@ def create_mock_mcts_solver():
 @click.option("--max-turns", type=int, default=25, help="Maximum agent turns.")
 @click.option("--max-tokens", type=int, default=512, help="Max tokens per LLM completion (keeps turns concise).")
 @click.option("--demo", is_flag=True, help="Run an automated mock demo showing Duck Harness reasoning.")
+@click.option("--dream-rsi", is_flag=True, help="Run Dream-RSI Recursive Self-Improvement demonstration.")
 @click.option("--show-thinking", is_flag=True, default=False, help="Stream live model thinking/reasoning process to console.")
 @click.option("--mcts", type=int, default=0, help="MCTS Mode: 0=Off, 1=Fast Code-driven MCTS (0.02s, Cách 1), 2=LLM-Guided MCTS (Cách 2).")
 @click.option("--mcts-sims", type=int, default=None, help="Number of MCTS simulations per turn (default: 50 for mode 1, 8 for mode 2).")
@@ -102,12 +192,17 @@ def main(
     max_turns: int,
     max_tokens: int,
     demo: bool,
+    dream_rsi: bool,
     show_thinking: bool,
     mcts: int,
     mcts_sims: int | None,
     save_trace: str | None,
 ) -> None:
     """Run the Duck Harness autonomous game agent."""
+    if dream_rsi:
+        run_dream_rsi_demo(game, level, console)
+        return
+
     console.print(
         Panel.fit(
             "[bold cyan]tau-game: Light-Duck Harness[/bold cyan]\n"
@@ -190,7 +285,7 @@ def main(
                     f"[bold cyan]Turn {turn_idx}:[/bold cyan] [green]💻 Writing code (~{token_counts['visible']} tokens)...[/green]"
                 )
 
-    def on_step(turn_idx: int, turn_record, curr_env):
+    def on_step(turn_idx: int, turn_record, curr_env, node=None, tree=None):
         nonlocal active_status
         if active_status:
             active_status.stop()
@@ -201,6 +296,10 @@ def main(
                 console.print("\n")
         panel = build_turn_panel(turn_idx, turn_record, curr_env, max_turns=max_turns)
         console.print(panel)
+        if node is not None:
+            from agent.progress import build_dream_rsi_step_panel
+            rsi_panel = build_dream_rsi_step_panel(turn_idx, node, tree or agent.tree)
+            console.print(rsi_panel)
 
     agent = DuckAgent(
         env=env,
