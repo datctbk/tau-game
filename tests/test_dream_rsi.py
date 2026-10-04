@@ -8,7 +8,13 @@ if str(pkg_root) not in sys.path:
     sys.path.insert(0, str(pkg_root))
 
 from agent.discovery_tree import DiscoveryNode, DiscoveryTree
-from agent.meta_policy import ObservationSignal, OptimalPolicy
+from agent.meta_policy import (
+    GridPlan,
+    GridPlanningContext,
+    ObservationSignal,
+    OptimalPolicy,
+    adapt_default_beta,
+)
 from env.environment import Frame
 from env.game import GridWorld
 from rsi.dreaming import DreamingOptimizer
@@ -143,5 +149,70 @@ def test_dream_rsi_orchestrator_cycle(tmp_path):
     assert cycle.online_solved is True
     assert cycle.online_reward == 1.0
     assert cycle.tree_size == 3
+    assert cycle.grid_plan is not None
     assert len(orchestrator.history_pool) == 1
     assert (tmp_path / "rsi_artifacts" / "tree_round_001.json").exists()
+
+
+def test_grid_planning_and_beta_adaptation():
+    policy = OptimalPolicy(beta=0.5, max_parallelism=3)
+
+    # 1. Bootstrap context
+    ctx_empty = GridPlanningContext(history=[])
+    plan_empty = policy.plan_grid(ctx_empty)
+    assert plan_empty.branch_count == 3
+    assert plan_empty.refine_count == 6
+    assert "Bootstrap plan" in plan_empty.reason
+
+    # 2. Solved quickly -> expand width
+    ctx_solved = GridPlanningContext(history=[{"online_solved": True, "online_steps": 4, "discovered_nodes": 5}])
+    plan_solved = policy.plan_grid(ctx_solved)
+    assert plan_solved.branch_count == 4
+    assert plan_solved.refine_count == 6
+
+    # 3. Plateaued -> widen search
+    ctx_plateau = GridPlanningContext(history=[{"online_solved": False, "online_steps": 18, "discovered_nodes": 20}])
+    plan_plateau = policy.plan_grid(ctx_plateau)
+    assert plan_plateau.branch_count == 5
+    assert plan_plateau.refine_count == 5
+
+    # 4. Beta adaptation
+    # Improving: keeps beta
+    b_impr = adapt_default_beta(0.5, live_best_improving=True, plateaued=False, sweep_results=[{"beta": 0.5}])
+    assert b_impr == 0.5
+
+    # Plateaued with higher attainment at higher beta -> raise beta
+    sweep = [{"beta": 0.5, "mean_score": 0.5}, {"beta": 0.7, "mean_score": 0.9}]
+    b_plat = adapt_default_beta(0.5, live_best_improving=False, plateaued=True, sweep_results=sweep)
+    assert b_plat > 0.5
+
+
+def test_simulator_dream_rsi_api_extensions():
+    root_frame = Frame(grid=[[0, 1], [0, 3]], step=0, level=1)
+    tree = DiscoveryTree(root_frame=root_frame)
+    b1 = tree.add_attempt(tree.root_id, ["RIGHT"], root_frame, score=0.4)
+    tree.add_attempt(b1.node_id, ["DOWN"], root_frame, score=0.8)
+    b2 = tree.add_attempt(tree.root_id, ["DOWN"], root_frame, score=0.2)
+
+    sim = PuzzleReplaySimulator(tree=tree, max_parallelism=2)
+    assert sim.legal_roots() == [tree.root_id]
+    assert sim.opened_branches() == []
+
+    # Reveal root child b1
+    revealed_obs = []
+    revealed = sim.probe_batch([tree.root_id], on_reveal=lambda obs: revealed_obs.append(obs))
+    assert len(revealed) == 1
+    assert len(revealed_obs) == 1
+    assert revealed_obs[0].cell_id == b1.node_id
+    assert 0 in sim.opened_branches()
+
+    # Check meta
+    meta = sim.meta(b1.node_id)
+    assert meta.cell_id == b1.node_id
+    assert meta.branch == 0
+
+    # Check observed observations
+    obs_dict = sim.observed_observations()
+    assert b1.node_id in obs_dict
+    assert obs_dict[b1.node_id].score == 0.4
+

@@ -180,6 +180,7 @@ def run_dream_rsi_demo(game: str, level: int, console: Console) -> None:
 @click.option("--demo", is_flag=True, help="Run an automated mock demo showing Duck Harness reasoning.")
 @click.option("--dream-rsi", is_flag=True, help="Run Dream-RSI Recursive Self-Improvement demonstration.")
 @click.option("--show-thinking", is_flag=True, default=False, help="Stream live model thinking/reasoning process to console.")
+@click.option("--enable-thinking/--no-thinking", "enable_thinking", default=None, help="Explicitly enable/disable thinking in OpenAI-compatible endpoint.")
 @click.option("--mcts", type=int, default=0, help="MCTS Mode: 0=Off, 1=Fast Code-driven MCTS (0.02s, Cách 1), 2=LLM-Guided MCTS (Cách 2).")
 @click.option("--mcts-sims", type=int, default=None, help="Number of MCTS simulations per turn (default: 50 for mode 1, 8 for mode 2).")
 @click.option("--save-trace", type=click.Path(), default=None, help="Save execution trace to a JSON file.")
@@ -194,6 +195,7 @@ def main(
     demo: bool,
     dream_rsi: bool,
     show_thinking: bool,
+    enable_thinking: bool | None,
     mcts: int,
     mcts_sims: int | None,
     save_trace: str | None,
@@ -239,7 +241,13 @@ def main(
             f"model={model or 'tau default'}, max_tokens={max_tokens}, "
             f"show_thinking={thinking_mode}\n"
         )
-        llm = LLMClient(provider=provider, model=model, base_url=base_url, max_tokens=max_tokens)
+        llm = LLMClient(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            enable_thinking=enable_thinking,
+        )
 
     # 3. Create DuckAgent with live streaming and status callbacks
     thinking_state = {"started": False, "turn": 0}
@@ -308,7 +316,7 @@ def main(
         verbose=False,
         on_step_callback=on_step,
         on_turn_start=on_turn_start,
-        on_token=on_token,
+        on_token=on_token if show_thinking else None,
         use_mcts=mcts,
         mcts_sims=mcts_sims,
     )

@@ -126,6 +126,7 @@ class LLMClient:
         base_url: str | None = None,
         api_key: str | None = None,
         max_tokens: int = 512,
+        enable_thinking: bool | None = None,
         extension_context: Any = None,
         mock_fn: Callable[[list[dict[str, str]]], str] | None = None,
     ) -> None:
@@ -134,6 +135,7 @@ class LLMClient:
         self.base_url = base_url
         self.api_key = api_key
         self.max_tokens = max_tokens
+        self.enable_thinking = enable_thinking
         self.extension_context = extension_context
         self.mock_fn = mock_fn
 
@@ -142,7 +144,7 @@ class LLMClient:
 
     def _init_tau_provider(self) -> None:
         """Initialize tau provider if running standalone without extension context."""
-        if self.mock_fn is not None or self.extension_context is not None:
+        if self.mock_fn is not None or self.extension_context is not None or self.base_url is not None:
             return
 
         try:
@@ -204,6 +206,10 @@ class LLMClient:
         system_prompt = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
         user_prompt = messages[-1]["content"] if messages else ""
 
+        th_level = None
+        if self.enable_thinking is not None:
+            th_level = "on" if self.enable_thinking else "off"
+
         with self.extension_context.create_sub_session(
             system_prompt=system_prompt,
             load_skills=False,
@@ -211,10 +217,20 @@ class LLMClient:
             load_context_files=False,
             allowed_tools=[],
             max_turns=1,
+            max_tokens=self.max_tokens,
+            thinking_level=th_level,
         ) as sub:
-            # Enforce max_tokens on child agent config so large models do not ramble indefinitely
-            if hasattr(sub, "agent") and hasattr(sub.agent, "config"):
-                sub.agent.config.max_tokens = self.max_tokens
+            # Enforce max_tokens and thinking_level on child agent and provider
+            sub_agent = getattr(sub, "_agent", getattr(sub, "agent", None))
+            if sub_agent is not None:
+                if hasattr(sub_agent, "config"):
+                    sub_agent.config.max_tokens = self.max_tokens
+                    if th_level is not None:
+                        sub_agent.config.thinking_level = th_level
+                if hasattr(sub_agent, "provider") and hasattr(sub_agent.provider, "_agent_config"):
+                    sub_agent.provider._agent_config.max_tokens = self.max_tokens
+                    if th_level is not None:
+                        sub_agent.provider._agent_config.thinking_level = th_level
 
             visible_parts: list[str] = []
             thinking_parts: list[str] = []
@@ -323,6 +339,12 @@ class LLMClient:
 
             client = OpenAI(base_url=base_url, api_key=api_key)
 
+            extra_body: dict[str, Any] = {}
+            if self.enable_thinking is not None:
+                extra_body["enable_thinking"] = self.enable_thinking
+                if not self.enable_thinking:
+                    extra_body["chat_template_kwargs"] = {"enable_thinking": False}
+
             if on_token is not None:
                 stream = client.chat.completions.create(
                     model=model,
@@ -330,6 +352,7 @@ class LLMClient:
                     temperature=0.3,
                     max_tokens=self.max_tokens,
                     stream=True,
+                    extra_body=extra_body or None,
                 )
                 visible_parts: list[str] = []
                 thinking_parts: list[str] = []
@@ -365,8 +388,14 @@ class LLMClient:
                 messages=messages,  # type: ignore
                 temperature=0.3,
                 max_tokens=self.max_tokens,
+                extra_body=extra_body or None,
             )
-            return resp.choices[0].message.content or ""
+            msg = resp.choices[0].message
+            content = msg.content or ""
+            reasoning = getattr(msg, "reasoning_content", None)
+            if not content and reasoning:
+                return str(reasoning).strip()
+            return content
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to generate LLM response: {exc}. "

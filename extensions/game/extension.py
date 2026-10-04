@@ -186,8 +186,23 @@ class GameExtension(Extension):
             out_console = getattr(context, "_console", None) or Console()
             run_dream_rsi_demo(game_name, level, out_console)
             return True
-        # Default show_thinking to True so user always sees thinking, unless explicitly disabled with --no-thinking
-        show_thinking = not any(p in ("--no-thinking", "no-thinking") for p in parts)
+        # Parse thinking preference: supports --no-thinking, --think off, -t off, --think=off, etc.
+        show_thinking = True
+        for i, p in enumerate(parts):
+            p_lower = p.lower()
+            if p_lower in ("--no-thinking", "no-thinking", "--no-think", "no-think"):
+                show_thinking = False
+            elif p_lower.startswith("--think="):
+                val = p_lower.split("=", 1)[1]
+                if val in ("off", "false", "0", "no"):
+                    show_thinking = False
+            elif p_lower.startswith("-t="):
+                val = p_lower.split("=", 1)[1]
+                if val in ("off", "false", "0", "no"):
+                    show_thinking = False
+            elif p_lower in ("--think", "-t") and i + 1 < len(parts):
+                if parts[i + 1].lower() in ("off", "false", "0", "no"):
+                    show_thinking = False
         
         # Parse MCTS mode: --mcts 1 (Fast Code MCTS, 0.02s) vs --mcts 2 (LLM-Guided MCTS)
         use_mcts = 0
@@ -298,7 +313,7 @@ class GameExtension(Extension):
                         rsi_step_panel = build_dream_rsi_step_panel(turn_idx, node, tree or agent.tree)
                         context.print(rsi_step_panel)
 
-                llm = LLMClient(extension_context=context, max_tokens=1536)
+                llm = LLMClient(extension_context=context, max_tokens=3072, enable_thinking=show_thinking)
                 agent = DuckAgent(
                     env=env,
                     llm=llm,

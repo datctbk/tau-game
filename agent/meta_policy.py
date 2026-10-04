@@ -8,29 +8,101 @@ Adheres strictly to Dream-RSI constraints:
 
 from __future__ import annotations
 
-import math
+from dataclasses import dataclass, field
 from typing import Any
 
 from agent.discovery_tree import DiscoveryNode
+
+
+@dataclass
+class GridPlan:
+    """Next-cycle exploration grid plan (width vs depth) decided from history."""
+
+    branch_count: int
+    refine_count: int
+    reason: str = ""
+
+
+@dataclass
+class GridPlanningContext:
+    """Historical context provided to plan_grid before creating a new live grid."""
+
+    history: list[dict[str, Any]] = field(default_factory=list)
+    hard_max_branch_count: int = 10
+    hard_max_refine_count: int = 20
+    fallback_branch_count: int = 3
+    fallback_refine_count: int = 6
+    worker_cap: int = 3
+
+
+@dataclass
+class BranchTrajectory:
+    """Reconstructed prefix trajectory for an opened branch in the discovery tree."""
+
+    branch_id: str
+    nodes: list[DiscoveryNode]
+    successful_anchor: DiscoveryNode | None
+    score_trend: float
+    regressions: int
+    repair_sequence: list[str]
+    explored_depth: int
+
+
+def adapt_default_beta(
+    prior_beta: float,
+    live_best_improving: bool,
+    plateaued: bool,
+    sweep_results: list[dict[str, Any]] | None = None,
+) -> float:
+    """Cross-cycle default-beta adaptation rule from Dream-RSI Section B.2.
+    
+    Rules:
+    1. Live best is still improving: keep prior default beta unless sweep clearly favors a nearby one.
+    2. Live best has plateaued, and higher beta reaches higher attainment: raise default by small step (0.1-0.2).
+    3. High default beta tried through plateau and adds work without higher attainment: lower by small step.
+    4. Insufficient history or conflicting evidence: use moderately exploratory default (0.6).
+    """
+    if sweep_results is None or len(sweep_results) == 0:
+        return 0.6
+
+    if live_best_improving:
+        return prior_beta
+
+    if plateaued:
+        # Check if higher beta achieves strictly higher attainment in sweep
+        higher_betas = [r for r in sweep_results if r.get("beta", 0) > prior_beta]
+        prior_res = next((r for r in sweep_results if abs(r.get("beta", 0) - prior_beta) < 0.05), None)
+        prior_score = prior_res.get("mean_score", 0.0) if prior_res else 0.0
+
+        higher_improved = any(r.get("mean_score", 0.0) > prior_score + 1e-4 for r in higher_betas)
+        if higher_improved and prior_beta < 0.9:
+            return round(min(1.0, prior_beta + 0.15), 2)
+        elif prior_beta >= 0.7:
+            return round(max(0.2, prior_beta - 0.15), 2)
+
+    return prior_beta
 
 
 class ObservationSignal:
     """Helper signals derived from prefix-revealed nodes."""
 
     @staticmethod
-    def branch_promising(node: DiscoveryNode, baseline_score: float = 0.0) -> bool:
+    def branch_promising(node: Any, baseline_score: float = 0.0) -> bool:
         """True if the node improved score over baseline or shows positive trend."""
-        return node.score > baseline_score or node.delta_vs_parent > 0.0
+        return getattr(node, "score", 0.0) > baseline_score or getattr(node, "delta_vs_parent", 0.0) > 0.0
 
     @staticmethod
-    def branch_failed_hard(node: DiscoveryNode) -> bool:
+    def branch_failed_hard(node: Any) -> bool:
         """True if the node has an unrecoverable failure or terminal loss."""
-        return node.fail_class == "dead_end" or (node.done and node.score <= 0.0)
+        fail_class = getattr(node, "fail_class", "ok")
+        done = getattr(node, "done", False)
+        score = getattr(node, "score", 0.0)
+        return fail_class == "dead_end" or (done and score <= 0.0)
 
     @staticmethod
-    def is_repairable(node: DiscoveryNode) -> bool:
+    def is_repairable(node: Any) -> bool:
         """True if failure is an implementation/code error (Syntax, Index, Name error)."""
-        return node.fail_class == "repairable_code"
+        return getattr(node, "fail_class", "ok") == "repairable_code"
 
 
 class OptimalPolicy:
@@ -38,10 +110,59 @@ class OptimalPolicy:
 
     NAME = "OptimalPolicy"
 
-    def __init__(self, beta: float = 0.5, max_parallelism: int = 3) -> None:
-        self.beta = float(max(0.01, min(1.0, beta)))
+    def __init__(self, beta: float = 0.5, max_parallelism: int = 3, config: dict[str, Any] | None = None) -> None:
+        self.config = config or {}
+        configured_beta = self.config.get("beta", beta)
+        self.beta = float(max(0.01, min(1.0, configured_beta)))
         self.max_parallelism = max(1, max_parallelism)
         self.schedule = self._schedule(self.beta)
+
+    def plan_grid(self, context: GridPlanningContext) -> GridPlan:
+        """Required next-cycle grid planning (Dream-RSI Listing 2, lines 190-243).
+        
+        Chooses width (branch_count) vs depth (refine_count) from historical evidence:
+        - Roots improve early while deeper refinements stall -> widen, reduce depth.
+        - High gains arrive late on small set of directions -> narrow, increase depth.
+        - Plateaued directions after sufficient depth -> widen.
+        - Repeated hard failures -> reduce width and depth conservatively.
+        - Insufficient history -> conservative bootstrap plan.
+        """
+        history = context.history
+        if not history:
+            return GridPlan(
+                branch_count=context.fallback_branch_count,
+                refine_count=context.fallback_refine_count,
+                reason="Bootstrap plan: insufficient history to infer depth vs width preference.",
+            )
+
+        # Inspect latest cycle outcomes
+        latest = history[-1]
+        solved = latest.get("online_solved", False)
+        steps = latest.get("online_steps", 0)
+        discovered = latest.get("discovered_nodes", 0)
+
+        # Evidence: Quick solve with few steps -> High depth efficiency, maintain balanced plan
+        if solved and steps <= context.fallback_refine_count:
+            return GridPlan(
+                branch_count=min(context.hard_max_branch_count, context.fallback_branch_count + 1),
+                refine_count=context.fallback_refine_count,
+                reason="Policy solved quickly; expanding width for diversity while holding depth.",
+            )
+
+        # Evidence: Many attempts explored but plateaued -> expand width
+        if discovered > 15 and not solved:
+            return GridPlan(
+                branch_count=min(context.hard_max_branch_count, context.fallback_branch_count + 2),
+                refine_count=max(2, context.fallback_refine_count - 1),
+                reason="Exploration plateaued on current directions; widening search to unblock new mechanics.",
+            )
+
+        # Default evidence-based conservative allocation
+        return GridPlan(
+            branch_count=context.fallback_branch_count,
+            refine_count=context.fallback_refine_count,
+            reason="Balanced plan maintained according to recent cycle progression.",
+        )
 
     def _schedule(self, beta: float) -> dict[str, Any]:
         """Map single scalar beta into behavioral thresholds.

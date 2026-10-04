@@ -24,6 +24,12 @@ Available Environment Variables in Python:
 Available Function:
 - `action("ACTION_NAME")` or `action(["MOVE1", "MOVE2", ...])`: Executes one or multiple moves in the game environment.
   Example: `action(["DOWN", "DOWN", "RIGHT"])` or `action("UP")`
+- Reading variables, computing state, and writing helper algorithms in Python cost NOTHING. Only calling `action(...)` spends game steps and advances the environment.
+
+### Execution Safety & Guards:
+- **Known No-Op Guard**: An action already proven to change nothing (`blocked (no change)`) from the exact same board state is refused before execution (`KnownNoOpActionError`), saving your move budget. If you have reason to believe it will behave differently now, re-issuing that exact action again immediately will override the guard.
+- **Loop Breaker Guard**: Repeating the same action from the exact same board state within a single Python snippet is refused (`RepeatedActionInStateError`) to prevent runaway loops.
+- **Terminal State Guard**: Once the puzzle or level is completed, subsequent actions in the snippet are safely halted (`TerminalStateActionError`).
 
 ### Rules of Engagement:
 1. **Empirical Discovery (Learn from History)**: Symbols and mechanics are completely unknown. Inspect transition feedback:

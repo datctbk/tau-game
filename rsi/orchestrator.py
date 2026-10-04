@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.discovery_tree import DiscoveryTree
-from agent.meta_policy import OptimalPolicy
+from agent.meta_policy import (
+    GridPlan,
+    GridPlanningContext,
+    OptimalPolicy,
+    adapt_default_beta,
+)
 from rsi.dreaming import DreamingOptimizer, DreamingResult
 from rsi.replay_sim import PuzzleReplaySimulator
 
@@ -34,6 +39,7 @@ class RSICycleResult:
     discovered_nodes: int
     dreaming_result: DreamingResult | None = None
     policy_beta: float = 0.5
+    grid_plan: GridPlan | None = None
 
 
 class DreamRSIOrchestrator:
@@ -98,12 +104,41 @@ class DreamRSIOrchestrator:
         iter_num = len(self.cycles) + 1
         logger.info("=== Starting Dream-RSI Cycle %d ===", iter_num)
 
+        # 0. Plan Next-Cycle Exploration Grid (Dream-RSI Listing 2)
+        history_manifests = [
+            {
+                "online_solved": c.online_solved,
+                "online_steps": c.online_steps,
+                "online_reward": c.online_reward,
+                "discovered_nodes": c.discovered_nodes,
+                "policy_beta": c.policy_beta,
+            }
+            for c in self.cycles
+        ]
+        grid_ctx = GridPlanningContext(
+            history=history_manifests,
+            worker_cap=self.current_policy.max_parallelism,
+        )
+        plan = self.current_policy.plan_grid(grid_ctx)
+        logger.info("Grid plan for cycle %d: W=%d, R=%d (%s)", iter_num, plan.branch_count, plan.refine_count, plan.reason)
+
         # 1. Online Rollout
         tree = self.run_online_round(agent_runner)
         best_node = tree.best_node()
 
-        # 2. Offline Dreaming
+        # 2. Offline Dreaming across all replay worlds
         dream_res = self.run_offline_dreaming(candidate_betas=candidate_betas)
+
+        # 3. Cross-Cycle Default Beta Adaptation (Dream-RSI Listing 2, lines 169-185)
+        live_improving = len(self.cycles) > 0 and (best_node.score > max((c.online_reward for c in self.cycles), default=0.0))
+        plateaued = len(self.cycles) >= 2 and all(abs(c.online_reward - best_node.score) < 1e-4 for c in self.cycles[-2:])
+        adapted_beta = adapt_default_beta(
+            prior_beta=self.current_policy.beta,
+            live_best_improving=live_improving,
+            plateaued=plateaued,
+            sweep_results=dream_res.evaluations_summary,
+        )
+        self.current_policy = OptimalPolicy(beta=adapted_beta, max_parallelism=self.current_policy.max_parallelism)
 
         cycle_res = RSICycleResult(
             iteration=iter_num,
@@ -114,6 +149,7 @@ class DreamRSIOrchestrator:
             discovered_nodes=len(tree.nodes),
             dreaming_result=dream_res,
             policy_beta=self.current_policy.beta,
+            grid_plan=plan,
         )
         self.cycles.append(cycle_res)
         return cycle_res

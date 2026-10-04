@@ -13,6 +13,9 @@ from agent.meta_policy import OptimalPolicy
 from rsi.replay_sim import PuzzleReplaySimulator
 
 
+import math
+
+
 @dataclass
 class ReplayMetrics:
     """Metrics achieved by an exploration policy on a replay world."""
@@ -22,6 +25,8 @@ class ReplayMetrics:
     decision_rounds: int
     parallel_ratio: float  # total_probes / decision_rounds
     pareto_reward: float
+    effective_sequential_rounds: int = 1
+    parallel_penalty: float = 1.0
 
     def summary(self) -> str:
         return (
@@ -29,6 +34,7 @@ class ReplayMetrics:
             f"Probes: {self.total_probes} | "
             f"Rounds: {self.decision_rounds} | "
             f"Parallelism: {self.parallel_ratio:.2f} | "
+            f"Parallel Penalty: {self.parallel_penalty:.2f} | "
             f"Pareto Reward: {self.pareto_reward:.4f}"
         )
 
@@ -43,6 +49,7 @@ class ParetoEvaluator:
     def evaluate(self, policy: OptimalPolicy, sim: PuzzleReplaySimulator) -> ReplayMetrics:
         """Run policy rollout on the replay simulator."""
         sim.reset()
+        effective_seq_rounds = 0
 
         while not sim.is_finished():
             observed = sim.observed()
@@ -61,12 +68,16 @@ class ParetoEvaluator:
                 # Policy chose to stop
                 break
 
+            # Effective sequential rounds per Dream-RSI: ceil(k / W)
+            effective_seq_rounds += math.ceil(len(batch) / max(1, sim.max_parallelism))
             sim.probe_batch(batch)
 
         best_score = sim.best_revealed_score()
         total_probes = sim.total_probes
         rounds = max(1, sim.current_round)
         parallel_ratio = total_probes / rounds
+        effective_seq_rounds = max(1, effective_seq_rounds)
+        parallel_penalty = effective_seq_rounds / max(1, total_probes)
 
         # Dream-RSI Pareto reward
         pareto_reward = best_score - (self.beta1 * total_probes) + (self.beta2 * parallel_ratio)
@@ -77,6 +88,8 @@ class ParetoEvaluator:
             decision_rounds=rounds,
             parallel_ratio=parallel_ratio,
             pareto_reward=pareto_reward,
+            effective_sequential_rounds=effective_seq_rounds,
+            parallel_penalty=parallel_penalty,
         )
 
     def sweep_beta(
