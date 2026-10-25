@@ -107,6 +107,11 @@ class PythonREPL:
             last_res = self.env.current_frame
 
             for act in act_list:
+                if act is Ellipsis or str(act).strip() in ("...", "ELLIPSIS", ""):
+                    raise ValueError(
+                        "Action '...' / 'ELLIPSIS' is a placeholder. You must provide real actions, "
+                        f"e.g. action(['DOWN', 'RIGHT']). Valid actions: {self.env.valid_actions()}"
+                    )
                 act_str = str(act).upper().strip()
                 act_sig = action_signature(act_str)
                 curr_grid = self.env.current_frame.grid

@@ -47,7 +47,7 @@ Available Function:
 4. **REASONING & WORLD MODEL**:
    - Limit reasoning text to 1 short sentence before code.
    - You MAY list multiple concise bullet points under `World model:` to track all discovered mechanics (symbols, triggers, doors, goals). Retain past mechanics and append new ones!
-5. **IMMEDIATE CODE**: Output your ```python action([...]) ``` code block immediately.
+5. **IMMEDIATE CODE**: Output your ```python action(["MOVE1", "MOVE2", ...]) ``` code block with actual moves immediately. Do NOT output a literal `[...]` placeholder.
 
 ### Example Response:
 Moving right entered the portal and teleported.
@@ -105,7 +105,8 @@ def build_turn_prompt(
         lines.append(f"\nKnown World Model:\n{world_model}")
 
     lines.append(
-        "\nCRITICAL: Keep reasoning under 20 words. Look at B's current position and plan forward toward remaining symbols. Directly output ```python action([...])```."
+        "\nCRITICAL: Keep reasoning under 20 words. Look at B's current position and plan forward toward remaining symbols. "
+        "Directly output concrete moves, e.g. ```python action([\"DOWN\", \"RIGHT\"])```. Do NOT use '...' or '[...]' placeholders."
     )
     return "\n".join(lines)
 
