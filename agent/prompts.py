@@ -24,7 +24,8 @@ Available Environment Variables in Python:
 Available Function:
 - `action("ACTION_NAME")` or `action(["MOVE1", "MOVE2", ...])`: Executes one or multiple moves in the game environment.
   Example: `action(["DOWN", "DOWN", "RIGHT"])` or `action("UP")`
-- Reading variables, computing state, and writing helper algorithms in Python cost NOTHING. Only calling `action(...)` spends game steps and advances the environment.
+- Coordinates are strictly `(row, col)`, 0-indexed from top-left (`UP` = row-1, `DOWN` = row+1, `LEFT` = col-1, `RIGHT` = col+1).
+- Key object positions are already listed below the ASCII board every turn — do NOT waste turns running `print(current_frame.segmentation)` without calling `action(...)`.
 
 ### Execution Safety & Guards:
 - **Known No-Op Guard**: An action already proven to change nothing (`blocked (no change)`) from the exact same board state is refused before execution (`KnownNoOpActionError`), saving your move budget. If you have reason to believe it will behave differently now, re-issuing that exact action again immediately will override the guard.
@@ -36,6 +37,7 @@ Available Function:
    - If an object shifts position when you move into it, you pushed it!
    - Pushable blocks typically need to be guided and pushed onto target pads/markers to solve the puzzle.
    - Pushing requires open space: If an object has a wall or boundary behind it in the push direction, pushing into it is BLOCKED. Maneuver to another side to push it into an open tile ('.') or target pad.
+   - Deadlock & RESET: Never push a block onto an outer wall/corner unless a target pad is on that same wall. If a block is trapped against a wall/corner with no way to reach a target pad, call `action("RESET")` immediately instead of overthinking.
    - Collectibles (keys, items): Collected by stepping directly ONTO their tile (`.->B`), not from a distance.
    - The SPACE action: `SPACE` acts as a remote switch or toggle for phase barriers/mechanisms (e.g., toggling a barrier `# <-> .`). It does NOT collect or interact with adjacent items! Inspect the transition output: if only a remote coordinate changed, `SPACE` only toggles that remote coordinate. Never spam `SPACE` expecting adjacent items to be collected.
    - If an action result says "blocked (no change)", movement is blocked in that direction; you CANNOT pass through it. Pick an unblocked direction.
@@ -80,7 +82,10 @@ def build_turn_prompt(
         lines.append(f"Last Actions Taken: {recent_actions}")
 
     if last_repl_output:
-        lines.append(f"Last Action Results:\n{last_repl_output.strip()}")
+        trimmed_repl = last_repl_output.strip()
+        if len(trimmed_repl) > 1200:
+            trimmed_repl = trimmed_repl[:1200] + "\n... (truncated)"
+        lines.append(f"Last Action Results:\n{trimmed_repl}")
 
     # Empirical check if actions produced zero physical change
     if previous_frame and recent_actions and current_frame.grid == previous_frame.grid:
@@ -93,10 +98,27 @@ def build_turn_prompt(
         for fact in empirical_facts[-6:]:
             lines.append(f"- {fact}")
 
-    lines.append("\nCurrent Board (ASCII):")
+    lines.append("\nCurrent Board (ASCII, coords=(row, col), 0-indexed from top-left):")
     lines.append(current_frame.ascii)
 
+    # Compact object coordinate summary so the model doesn't waste turns inspecting segmentation
+    from perception.segmentation import COLOR_TO_CHAR
+
+    symbol_positions: dict[str, list[tuple[int, int]]] = {}
+    for r, row in enumerate(current_frame.grid):
+        for c, val in enumerate(row):
+            if val in (0, 5):  # skip floor (.) and wall (#)
+                continue
+            ch = COLOR_TO_CHAR.get(val, str(val))
+            symbol_positions.setdefault(ch, []).append((r, c))
+    if symbol_positions:
+        summary_parts = [f"{ch}={coords[0] if len(coords) == 1 else coords}" for ch, coords in sorted(symbol_positions.items())]
+        lines.append(f"Key Positions (row, col): {', '.join(summary_parts)}")
+
     if current_frame.info:
+        covered = current_frame.info.get("covered_targets")
+        if covered:
+            lines.append(f"Covered Targets (box already on target pad — do NOT push off): {covered}")
         status_flags = [f"{k}={v}" for k, v in current_frame.info.items() if v is True and k != "space_toggle"]
         if status_flags:
             lines.append(f"\nPlayer Status / Inventory: {status_flags}")

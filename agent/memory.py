@@ -49,6 +49,10 @@ class GameMemory:
                 elif any(sym in transition for sym in ("#->.", ".->#")):
                     fact = f"Barrier change observed: {transition}"
                 elif len(transition.split(",")) >= 2 and any("B->" in part for part in transition.split(",")):
+                    # Skip trivial empty-floor movement (only B->. and .->B) so pushes/portals/pickups aren't evicted
+                    deltas = re.findall(r"\(\d+,\d+\)\s+([^\s,]+->[^\s,]+)", transition)
+                    if len(deltas) == 2 and set(deltas) == {"B->.", ".->B"}:
+                        continue
                     fact = f"Movement / displacement transition: {transition}"
                 else:
                     fact = f"Physical effect observed: {transition}"
@@ -60,15 +64,48 @@ class GameMemory:
         if len(self.empirical_facts) > 10:
             self.empirical_facts = self.empirical_facts[-10:]
 
+    @staticmethod
+    def _sanitize_world_model(raw: str, max_bullets: int = 6, max_chars: int = 450) -> str:
+        """Deduplicate repetitive sentences/lines and cap world model length."""
+        cleaned = re.sub(r"```.*?```", "", raw, flags=re.DOTALL).strip()
+        if not cleaned:
+            return ""
+
+        # Split by newline or sentence boundary to catch runaway inline repetition
+        raw_items: list[str] = []
+        for line in cleaned.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(("-", "*")):
+                raw_items.append(line)
+            else:
+                parts = [p.strip() for p in re.split(r"(?<=[.!?])\s*", line) if p.strip()]
+                raw_items.extend(parts)
+
+        deduped: list[str] = []
+        seen_norm: set[str] = set()
+        for item in raw_items:
+            norm = re.sub(r"\W+", " ", item.lower()).strip()
+            if not norm or norm in seen_norm:
+                continue
+            seen_norm.add(norm)
+            deduped.append(item)
+            if len(deduped) >= max_bullets:
+                break
+
+        result = "\n".join(deduped).strip()
+        if len(result) > max_chars:
+            result = result[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:-")
+        return result
+
     def update_world_model(self, text: str) -> None:
         """Extract and update world model insights from LLM response or user override."""
         # Check for explicit "World model:" or "Discovered mechanics:" block
         pattern = r"(?:World model|Discovered mechanics|Hypotheses|Findings)\s*:\s*(.*?)(?=(?:```|\Z|\n\n[A-Z]))"
         match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
         if match:
-            extracted = match.group(1).strip()
-            # Clean out any accidental code blocks from the extracted line
-            extracted = re.sub(r"```.*?```", "", extracted, flags=re.DOTALL).strip()
+            extracted = self._sanitize_world_model(match.group(1))
             if len(extracted) > 5 and not extracted.startswith(("action(", "print(")):
                 self.world_model = extracted
                 return

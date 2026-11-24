@@ -332,6 +332,7 @@ class MiniArcGame(BaseEnvironment):
                 "player": self._player,
                 "space_toggle": self._space_toggle,
                 "done": self._done,
+                "covered_targets": sorted(pos for pos in self._target_pads if self._grid[pos[0]][pos[1]] == 8),
             },
         )
         return self._current_frame
@@ -469,6 +470,7 @@ class MiniArcGame(BaseEnvironment):
                 "has_red_key": self._has_red_key,
                 "space_toggle": self._space_toggle,
                 "done": self._done,
+                "covered_targets": sorted(pos for pos in self._target_pads if self._grid[pos[0]][pos[1]] == 8),
             },
         )
         self._current_frame = new_frame

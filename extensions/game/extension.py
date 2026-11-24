@@ -104,7 +104,7 @@ class GameExtension(Extension):
                 panel = build_turn_panel(turn_idx, turn_record, curr_env, max_turns=max_turns)
                 self._ctx.print(panel)
 
-        llm = LLMClient(extension_context=self._ctx)
+        llm = LLMClient(extension_context=self._ctx, max_tokens=8192)
         agent = DuckAgent(
             env=env,
             llm=llm,
@@ -313,7 +313,7 @@ class GameExtension(Extension):
                         rsi_step_panel = build_dream_rsi_step_panel(turn_idx, node, tree or agent.tree)
                         context.print(rsi_step_panel)
 
-                llm = LLMClient(extension_context=context, max_tokens=3072, enable_thinking=show_thinking)
+                llm = LLMClient(extension_context=context, max_tokens=8192, enable_thinking=show_thinking)
                 agent = DuckAgent(
                     env=env,
                     llm=llm,
